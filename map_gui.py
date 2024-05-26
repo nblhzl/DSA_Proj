@@ -13,8 +13,8 @@ def calculate_route():
         G = ox.graph_from_place("Singapore", network_type='drive')
         
         # Get the nearest network nodes to the origin and destination points
-        orig_node = ox.distance.nearest_nodes(G, X=origin_point[1], Y=origin_point[0])
-        dest_node = ox.distance.nearest_nodes(G, X=destination_point[1], Y=destination_point[0])
+        orig_node = ox.distance.nearest_nodes(G, X=origin_point[1], Y=origin_point[0]) # Example: Changi Airport = (1.3644, 103.9915)
+        dest_node = ox.distance.nearest_nodes(G, X=destination_point[1], Y=destination_point[0]) # Example: Marina Bay Sands = (1.2834, 103.8607)
         
         # Calculate shortest path
         route = nx.shortest_path(G, orig_node, dest_node, weight='length')
