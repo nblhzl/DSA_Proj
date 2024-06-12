@@ -13,11 +13,11 @@ edges = pd.read_csv(edges_file_path)
 # Create a new NetworkX graph
 G = nx.Graph()
 
-# Add nodes with positions for each MRT station
+# Add nodes with coordinates for each MRT station according to csv file
 for idx, row in mrt_stations.iterrows():
     G.add_node(row['STN_NAME'], pos=(row['Longitude'], row['Latitude']))
 
-# Add edges between the MRT stations based on the edges DataFrame
+# Add edges between the MRT stations according to csv file
 for idx, row in edges.iterrows():
     G.add_edge(row['Station'], row['Connected Station'])
 
@@ -25,7 +25,7 @@ for idx, row in edges.iterrows():
 start_station = 'CHANGI AIRPORT MRT STATION'
 end_station = 'WOODLANDS MRT STATION'
 
-# Find the shortest path between the start and end stations
+# Use Networkx built-in function to find shortest path between the start and end stations
 try:
     shortest_path = nx.shortest_path(G, source=start_station, target=end_station)
     print("Shortest path:", shortest_path)
@@ -60,11 +60,11 @@ if shortest_path:
 # Create a folium map centered around Singapore
 map_sg = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
 
-# Add MRT stations as markers
+# Add markers to MRT stations
 for idx, row in mrt_stations.iterrows():
     folium.Marker(location=[row['Latitude'], row['Longitude']], popup=row['STN_NAME']).add_to(map_sg)
 
-# Plot the realistic path on the map
+# Plot route on the map
 if osm_path:
     path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in osm_path]
     folium.PolyLine(locations=path_coords, color='blue', weight=5).add_to(map_sg)
