@@ -77,7 +77,7 @@ for line, stations in mrt_lines.items():
 connections_df = pd.DataFrame(connections)
 
 # Save the connections to a new CSV file
-output_file_path = 'C:/Users/joelc/Downloads/DSAG_Project/MRT_Stations_Edges.csv'
+output_file_path = './MRT_Stations_Edges.csv'
 connections_df.to_csv(output_file_path, index=False)
 
 # Display the first few rows of the new DataFrame
