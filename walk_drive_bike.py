@@ -2,8 +2,12 @@ import osmnx as ox
 import networkx as nx
 import folium
 
+#network_type for getting nodes
+TRANSPORT_TYPE = 'walk' # replace with 'walk' 'bike' 'drive' to change transport type
+
+
 # Retrieve the walking network for Singapore
-G = ox.graph_from_place('Singapore', network_type='walk')
+G = ox.graph_from_place('Singapore', network_type=TRANSPORT_TYPE)
 
 # Extract the nodes from the graph
 nodes = list(G.nodes)
