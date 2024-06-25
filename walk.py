@@ -37,24 +37,36 @@ def custom_dijkstra(graph, start, end):
     return float("inf"), []
 
 # Find shortest path using custom Dijkstra's algorithm
-cost, path = custom_dijkstra(G, start_node, end_node)
+dijkstra_cost, dijkstra_path = custom_dijkstra(G, start_node, end_node)
+print(f"Shortest path using Dijkstra's algorithm from node {start_node} to node {end_node} has cost {dijkstra_cost} and path {dijkstra_path}")
 
-# Display the result
-print(f"Shortest path from node {start_node} to node {end_node} has cost {cost} and path {path}")
+# Find shortest path using A* algorithm
+a_star_path = nx.astar_path(G, start_node, end_node, weight='length')
+a_star_cost = nx.shortest_path_length(G, source=start_node, target=end_node, weight='length')
+print(f"Shortest path using A* algorithm from node {start_node} to node {end_node} has cost {a_star_cost} and path {a_star_path}")
+
+# Find shortest path using Bellman-Ford algorithm
+bellman_ford_path = nx.bellman_ford_path(G, start_node, end_node, weight='length')
+bellman_ford_cost = nx.bellman_ford_path_length(G, start_node, end_node, weight='length')
+print(f"Shortest path using Bellman-Ford algorithm from node {start_node} to node {end_node} has cost {bellman_ford_cost} and path {bellman_ford_path}")
 
 # Create a Folium map centered on Singapore
 singapore_latlng = [1.3521, 103.8198]  # Coordinates for Singapore
 m = folium.Map(location=singapore_latlng, zoom_start=12)
 
-# Extract the coordinates of the nodes in the path
-path_coords = [(G.nodes[node]['y'], G.nodes[node]['x']) for node in path]
+# Extract the coordinates of the nodes in each path
+dijkstra_path_coords = [(G.nodes[node]['y'], G.nodes[node]['x']) for node in dijkstra_path]
+a_star_path_coords = [(G.nodes[node]['y'], G.nodes[node]['x']) for node in a_star_path]
+bellman_ford_path_coords = [(G.nodes[node]['y'], G.nodes[node]['x']) for node in bellman_ford_path]
 
-# Add the route to the Folium map
-folium.PolyLine(path_coords, color="blue", weight=2.5, opacity=1).add_to(m)
+# Add the routes to the Folium map with different colors
+folium.PolyLine(dijkstra_path_coords, color="blue", weight=2.5, opacity=1, tooltip='Dijkstra').add_to(m)
+folium.PolyLine(a_star_path_coords, color="green", weight=2.5, opacity=1, tooltip='A*').add_to(m)
+folium.PolyLine(bellman_ford_path_coords, color="red", weight=2.5, opacity=1, tooltip='Bellman-Ford').add_to(m)
 
 # Mark the start and end points
-folium.Marker(location=path_coords[0], popup='Start', icon=folium.Icon(color='green')).add_to(m)
-folium.Marker(location=path_coords[-1], popup='End', icon=folium.Icon(color='red')).add_to(m)
+folium.Marker(location=dijkstra_path_coords[0], popup='Start', icon=folium.Icon(color='green')).add_to(m)
+folium.Marker(location=dijkstra_path_coords[-1], popup='End', icon=folium.Icon(color='red')).add_to(m)
 
 # Save map to an HTML file
 m.save("singapore_route.html")
