@@ -2,6 +2,14 @@ import osmnx as ox
 import folium
 import heapq
 import networkx as nx
+import pandas as pd
+
+# Emissions factors (in kg CO2 per km)
+EMISSIONS_FACTORS = {
+    'drive': 0.170,  # Petrol car
+    'bike': 0.0,  # Assuming zero emissions for bikes
+    'walk': 0.0  # Assuming zero emissions for walking
+}
 
 # Generalized Dijkstra's Algorithm Function
 def dijkstra(graph, start, end):
@@ -71,40 +79,65 @@ def a_star(graph, start, end):
 
     return [], float('infinity')
 
-# Map transport modes to their corresponding saved maps
-transport_modes = {
-    'drive': 'drive_route_map.html',
-    'bike': 'bike_route_map.html',
-    'walk': 'walk_route_map.html'
-}
+def generate_and_display_paths_drive_bike_walk(start_coords, end_coords):
+    # Map transport modes to their corresponding saved maps
+    transport_modes = {
+        'drive': 'drive_route_map.html',
+        'bike': 'bike_route_map.html',
+        'walk': 'walk_route_map.html'
+    }
 
-# Input start and end coordinates
-start_coords = (1.390505, 103.986793)
-end_coords = (1.379192, 103.759387)
+    paths_info = {}
 
-# Generate routes for each transport mode
-for mode, output_file in transport_modes.items():
-    graph = ox.graph_from_place("Singapore", network_type=mode, truncate_by_edge=False, simplify=False) # changed to False for more accuracy
+    # Generate routes for each transport mode
+    for mode, output_file in transport_modes.items():
+        graph = ox.graph_from_place("Singapore", network_type=mode, truncate_by_edge=False, simplify=False)
 
-    start_node = ox.distance.nearest_nodes(graph, X=start_coords[1], Y=start_coords[0])
-    end_node = ox.distance.nearest_nodes(graph, X=end_coords[1], Y=end_coords[0])
+        start_node = ox.distance.nearest_nodes(graph, X=start_coords[1], Y=start_coords[0])
+        end_node = ox.distance.nearest_nodes(graph, X=end_coords[1], Y=end_coords[0])
 
-    # Calculate paths using Dijkstra and A* algorithm
-    dijkstra_path, dijkstra_distance = dijkstra(graph, start_node, end_node)
-    a_star_path, a_star_distance = a_star(graph, start_node, end_node)
+        # Calculate paths using Dijkstra and A* algorithm
+        dijkstra_path, dijkstra_distance = dijkstra(graph, start_node, end_node)
+        a_star_path, a_star_distance = a_star(graph, start_node, end_node)
 
-    # Create a folium map centered around Singapore
-    map_sg = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
+        # Calculate emissions
+        dijkstra_emissions = dijkstra_distance * EMISSIONS_FACTORS[mode]
+        a_star_emissions = a_star_distance * EMISSIONS_FACTORS[mode]
 
-    # Plot Dijkstra route
-    if dijkstra_path:
-        dijkstra_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in dijkstra_path]
-        folium.PolyLine(locations=dijkstra_path_coords, color='blue', weight=5, tooltip=f'Dijkstra {mode.capitalize()} Route').add_to(map_sg)
+        paths_info[mode] = {
+            'dijkstra': {
+                'path': dijkstra_path,
+                'distance': dijkstra_distance / 1000,  # Convert to km
+                'emissions': dijkstra_emissions / 1000  # Convert to kg
+            },
+            'a_star': {
+                'path': a_star_path,
+                'distance': a_star_distance / 1000,  # Convert to km
+                'emissions': a_star_emissions / 1000  # Convert to kg
+            },
+            'file': output_file
+        }
 
-    # Plot A* route
-    if a_star_path:
-        a_star_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in a_star_path]
-        folium.PolyLine(locations=a_star_path_coords, color='red', weight=5, tooltip=f'A* {mode.capitalize()} Route').add_to(map_sg)
+        # Create a folium map centered around Singapore
+        map_sg = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
 
-    # Save the map
-    map_sg.save(output_file)
+        # Plot Dijkstra route
+        if dijkstra_path:
+            dijkstra_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in dijkstra_path]
+            folium.PolyLine(locations=dijkstra_path_coords, color='blue', weight=5, tooltip=f'Dijkstra {mode.capitalize()} Route').add_to(map_sg)
+
+        # Plot A* route
+        if a_star_path:
+            a_star_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in a_star_path]
+            folium.PolyLine(locations=a_star_path_coords, color='red', weight=5, tooltip=f'A* {mode.capitalize()} Route').add_to(map_sg)
+
+        # Save the map
+        map_sg.save(output_file)
+
+    return paths_info
+
+if __name__ == "__main__":
+    # For testing purposes
+    start_coords = (1.390505, 103.986793)
+    end_coords = (1.379192, 103.759387)
+    generate_and_display_paths_drive_bike_walk(start_coords, end_coords)
