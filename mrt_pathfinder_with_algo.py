@@ -3,6 +3,7 @@ import networkx as nx
 import osmnx as ox
 import folium
 import heapq
+from geopy.distance import geodesic
 
 # Load the MRT stations and edges CSV files
 stations_file_path = './MRT_Stations.csv'
@@ -22,8 +23,8 @@ for idx, row in mrt_stations.iterrows():
 for idx, row in edges.iterrows():
     G.add_edge(row['Station'], row['Connected Station'])
 
-# Emissions factors
-MRT_EMISSIONS_FACTOR = 0.028  # kg CO2 per km for MRT
+# Emissions factors in kg CO2 per km
+MRT_EMISSIONS_FACTOR = 0.028  
 
 # Generalized Dijkstra's Algorithm Function
 def dijkstra(graph, start, end, is_osm=False):
@@ -67,8 +68,8 @@ def heuristic(graph, node1, node2, coord_attr='pos'):
         (x1, y1) = graph.nodes[node1][coord_attr]
         (x2, y2) = graph.nodes[node2][coord_attr]
     else:
-        (x1, y1) = (graph.nodes[node1]['x'], graph.nodes[node1]['y'])
-        (x2, y2) = (graph.nodes[node2]['x'], graph.nodes[node2]['y'])
+        x1, y1 = graph.nodes[node1]['x'], graph.nodes[node1]['y']
+        x2, y2 = graph.nodes[node2]['x'], graph.nodes[node2]['y']
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
 def a_star(graph, start, end, coord_attr='pos', is_osm=False):
@@ -105,20 +106,34 @@ def a_star(graph, start, end, coord_attr='pos', is_osm=False):
 
     return [], float('infinity')
 
+def calculate_distance(path, graph):
+    total_distance = 0.0
+    for i in range(len(path) - 1):
+        pos1 = graph.nodes[path[i]]['pos']
+        pos2 = graph.nodes[path[i + 1]]['pos']
+        total_distance += geodesic((pos1[1], pos1[0]), (pos2[1], pos2[0])).km
+    return total_distance
+
 def generate_and_display_paths(start_station, end_station):
     # Use the generalized Dijkstra function to find the shortest path in MRT network
-    dijkstra_shortest_path, dijkstra_distance = dijkstra(G, start_station, end_station)
+    dijkstra_shortest_path, _ = dijkstra(G, start_station, end_station)
+    dijkstra_distance = calculate_distance(dijkstra_shortest_path, G)
     dijkstra_emissions = dijkstra_distance * MRT_EMISSIONS_FACTOR
+    dijkstra_stops = len(dijkstra_shortest_path) - 1
     print("Dijkstra shortest path:", dijkstra_shortest_path)
     print("Dijkstra distance (km):", dijkstra_distance)
     print("Dijkstra emissions (kg CO2):", dijkstra_emissions)
+    print("Dijkstra stops:", dijkstra_stops)
 
     # Use the generalized A* function to find the shortest path in MRT network
-    a_star_shortest_path, a_star_distance = a_star(G, start_station, end_station)
+    a_star_shortest_path, _ = a_star(G, start_station, end_station)
+    a_star_distance = calculate_distance(a_star_shortest_path, G)
     a_star_emissions = a_star_distance * MRT_EMISSIONS_FACTOR
+    a_star_stops = len(a_star_shortest_path) - 1
     print("A* shortest path:", a_star_shortest_path)
     print("A* distance (km):", a_star_distance)
     print("A* emissions (kg CO2):", a_star_emissions)
+    print("A* stops:", a_star_stops)
 
     # Download the street network for Singapore using osmnx
     place_name = "Singapore"
@@ -178,12 +193,14 @@ def generate_and_display_paths(start_station, end_station):
         'dijkstra': {
             'path': dijkstra_shortest_path,
             'distance': dijkstra_distance,
-            'emissions': dijkstra_emissions
+            'emissions': dijkstra_emissions,
+            'stops': dijkstra_stops
         },
         'a_star': {
             'path': a_star_shortest_path,
             'distance': a_star_distance,
-            'emissions': a_star_emissions
+            'emissions': a_star_emissions,
+            'stops': a_star_stops
         }
     }
 

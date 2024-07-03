@@ -2,13 +2,13 @@ import osmnx as ox
 import folium
 import heapq
 import networkx as nx
-import pandas as pd
+from geopy.distance import geodesic
 
-# Emissions factors (in kg CO2 per km)
+# Emissions in kg CO2 per km
 EMISSIONS_FACTORS = {
     'drive': 0.170,  # Petrol car
-    'bike': 0.0,  # Assuming zero emissions for bikes
-    'walk': 0.0  # Assuming zero emissions for walking
+    'bike': 0.0,  # zero emissions for bikes
+    'walk': 0.0  # zero emissions for walking
 }
 
 # Generalized Dijkstra's Algorithm Function
@@ -79,6 +79,14 @@ def a_star(graph, start, end):
 
     return [], float('infinity')
 
+def calculate_distance(path, graph):
+    total_distance = 0.0
+    for i in range(len(path) - 1):
+        pos1 = (graph.nodes[path[i]]['y'], graph.nodes[path[i]]['x'])
+        pos2 = (graph.nodes[path[i + 1]]['y'], graph.nodes[path[i + 1]]['x'])
+        total_distance += geodesic(pos1, pos2).km
+    return total_distance
+
 def generate_and_display_paths_drive_bike_walk(start_coords, end_coords):
     # Map transport modes to their corresponding saved maps
     transport_modes = {
@@ -97,8 +105,12 @@ def generate_and_display_paths_drive_bike_walk(start_coords, end_coords):
         end_node = ox.distance.nearest_nodes(graph, X=end_coords[1], Y=end_coords[0])
 
         # Calculate paths using Dijkstra and A* algorithm
-        dijkstra_path, dijkstra_distance = dijkstra(graph, start_node, end_node)
-        a_star_path, a_star_distance = a_star(graph, start_node, end_node)
+        dijkstra_path, _ = dijkstra(graph, start_node, end_node)
+        a_star_path, _ = a_star(graph, start_node, end_node)
+
+        # Calculate distances
+        dijkstra_distance = calculate_distance(dijkstra_path, graph)
+        a_star_distance = calculate_distance(a_star_path, graph)
 
         # Calculate emissions
         dijkstra_emissions = dijkstra_distance * EMISSIONS_FACTORS[mode]
@@ -107,13 +119,13 @@ def generate_and_display_paths_drive_bike_walk(start_coords, end_coords):
         paths_info[mode] = {
             'dijkstra': {
                 'path': dijkstra_path,
-                'distance': dijkstra_distance / 1000,  # Convert to km
-                'emissions': dijkstra_emissions / 1000  # Convert to kg
+                'distance': dijkstra_distance,  
+                'emissions': dijkstra_emissions  
             },
             'a_star': {
                 'path': a_star_path,
-                'distance': a_star_distance / 1000,  # Convert to km
-                'emissions': a_star_emissions / 1000  # Convert to kg
+                'distance': a_star_distance,  
+                'emissions': a_star_emissions  
             },
             'file': output_file
         }

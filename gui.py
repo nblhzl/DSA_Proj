@@ -15,14 +15,14 @@ class MRTPathFinderApp(tk.Tk):
         self.create_widgets()
 
     def create_widgets(self):
-        # Dropdown for selecting transport mode
+        # for selecting transport mode
         self.mode_label = tk.Label(self, text="Transport Mode:")
         self.mode_label.pack(pady=5)
         self.transport_mode = ttk.Combobox(self, values=["MRT", "Multi-transport", "Drive", "Bike", "Walk"])
         self.transport_mode.pack(pady=5)
         self.transport_mode.bind("<<ComboboxSelected>>", self.update_input_fields)
 
-        # Labels and input fields for selecting start and end points
+        # for selecting start and end points
         self.start_label = tk.Label(self, text="Starting Point:")
         self.start_label.pack(pady=5)
         self.start_input = ttk.Combobox(self, values=list(mrt_stations_algo['STN_NAME']))
@@ -33,11 +33,10 @@ class MRTPathFinderApp(tk.Tk):
         self.end_input = ttk.Combobox(self, values=list(mrt_stations_algo['STN_NAME']))
         self.end_input.pack(pady=5)
 
-        # Button to find paths and display the map
+        # to find paths and display map
         self.find_button = tk.Button(self, text="Find Path", command=self.find_path)
         self.find_button.pack(pady=20)
 
-        # Text widget to display the shortest path
         self.result_text = tk.Text(self, height=10, width=50)
         self.result_text.pack(pady=10)
 
@@ -97,6 +96,8 @@ class MRTPathFinderApp(tk.Tk):
             self.result_text.insert(tk.END, f"{algorithm.capitalize()} shortest path ({mode}): {info['path']}\n")
             self.result_text.insert(tk.END, f"Distance: {info['distance']:.2f} km\n")
             self.result_text.insert(tk.END, f"Emissions: {info['emissions']:.2f} kg CO2\n")
+            if mode == "MRT":
+                self.result_text.insert(tk.END, f"Number of stops: {info.get('stops', 'N/A')}\n")
 
     def open_map(self, filename):
         file_path = os.path.abspath(filename)
