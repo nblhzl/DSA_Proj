@@ -114,7 +114,31 @@ def calculate_distance(path, graph):
         total_distance += geodesic((pos1[1], pos1[0]), (pos2[1], pos2[0])).km
     return total_distance
 
-def generate_and_display_paths(start_station, end_station):
+def find_nearest_station(coords):
+    nearest_station = None
+    shortest_distance = float('inf')
+    for idx, row in mrt_stations.iterrows():
+        station_coords = (row['Latitude'], row['Longitude'])
+        distance = geodesic(coords, station_coords).km
+        if distance < shortest_distance:
+            nearest_station = row['STN_NAME']
+            shortest_distance = distance
+    return nearest_station
+
+def generate_and_display_paths(start, end):
+    # Determine if start and end are coordinates or station names
+    try:
+        start_coords = tuple(map(float, start.split(',')))
+        start_station = find_nearest_station(start_coords)
+    except ValueError:
+        start_station = start
+
+    try:
+        end_coords = tuple(map(float, end.split(',')))
+        end_station = find_nearest_station(end_coords)
+    except ValueError:
+        end_station = end
+
     # Use the generalized Dijkstra function to find the shortest path in MRT network
     dijkstra_shortest_path, _ = dijkstra(G, start_station, end_station)
     dijkstra_distance = calculate_distance(dijkstra_shortest_path, G)
