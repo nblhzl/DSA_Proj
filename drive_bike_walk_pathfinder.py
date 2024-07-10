@@ -214,7 +214,7 @@ for mode, output_file in transport_modes.items():
 
     # Plot second TSP route
     tsp_path_alternate_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in tsp_full_path_alternate]
-    folium.PolyLine(locations=tsp_path_alternate_coords, color='orange', weight=5, tooltip=f'Alternate TSP {mode.capitalize()} Route').add_to(map_sg)
+    folium.PolyLine(locations=tsp_path_alternate_coords, color='green', weight=5, tooltip=f'Alternate TSP {mode.capitalize()} Route').add_to(map_sg)
 
     # Add markers for start and end points
     folium.Marker(location=[start_coords[0], start_coords[1]], popup='Start', icon=folium.Icon(color='green')).add_to(map_sg)
