@@ -1,18 +1,13 @@
 import osmnx as ox
 import folium
 import heapq
-import networkx as nx
-from geopy.distance import geodesic
+import random
+import sys
 
-# Emissions in kg CO2 per km
-EMISSIONS_FACTORS = {
-    'drive': 0.170,  # Petrol car
-    'bike': 0.0,  # zero emissions for bikes
-    'walk': 0.0  # zero emissions for walking
-}
-
-# Generalized Dijkstra's Algorithm Function
-def dijkstra(graph, start, end):
+# Dijkstra's Algorithm Function
+def dijkstra(graph, start, end, penalties=None):
+    if penalties is None:
+        penalties = {}
     queue = [(0, start)]
     distances = {node: float('infinity') for node in graph.nodes}
     previous_nodes = {node: None for node in graph.nodes}
@@ -34,6 +29,8 @@ def dijkstra(graph, start, end):
 
         for neighbor in graph.neighbors(current_node):
             weight = graph.edges[current_node, neighbor, 0].get('length', 1)
+            if (current_node, neighbor) in penalties:
+                weight += penalties[(current_node, neighbor)]
             distance = current_distance + weight
 
             if distance < distances[neighbor]:
@@ -43,13 +40,15 @@ def dijkstra(graph, start, end):
 
     return [], float('infinity')
 
-# Generalized A* Algorithm Function
+# A* Algorithm Function
 def heuristic(graph, node1, node2):
     x1, y1 = graph.nodes[node1]['x'], graph.nodes[node1]['y']
     x2, y2 = graph.nodes[node2]['x'], graph.nodes[node2]['y']
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
-def a_star(graph, start, end):
+def a_star(graph, start, end, penalties=None):
+    if penalties is None:
+        penalties = {}
     open_set = [(0, start)]
     g_costs = {node: float('infinity') for node in graph.nodes}
     f_costs = {node: float('infinity') for node in graph.nodes}
@@ -70,6 +69,8 @@ def a_star(graph, start, end):
 
         for neighbor in graph.neighbors(current_node):
             weight = graph.edges[current_node, neighbor, 0].get('length', 1)
+            if (current_node, neighbor) in penalties:
+                weight += penalties[(current_node, neighbor)]
             tentative_g_cost = g_costs[current_node] + weight
             if tentative_g_cost < g_costs[neighbor]:
                 previous_nodes[neighbor] = current_node
@@ -79,77 +80,151 @@ def a_star(graph, start, end):
 
     return [], float('infinity')
 
-def calculate_distance(path, graph):
-    total_distance = 0.0
+# Travelling Salesman Problem Algorithm using Nearest Neighbor Heuristic (Greedy)
+def greedy_tsp(graph, nodes):
+    start_node = nodes[0]
+    end_node = nodes[-1]
+    tsp_path = [start_node]
+    unvisited = set(nodes[1:])
+
+    while unvisited:
+        last_node = tsp_path[-1]
+        if last_node == end_node:
+            break
+        next_node = min(unvisited, key=lambda node: dijkstra(graph, last_node, node)[1])
+        tsp_path.append(next_node)
+        unvisited.remove(next_node)
+
+    if tsp_path[-1] != end_node:
+        tsp_path.append(end_node)
+
+    return tsp_path
+
+def calculate_total_distance(graph, path):
+    total_distance = 0
     for i in range(len(path) - 1):
-        pos1 = (graph.nodes[path[i]]['y'], graph.nodes[path[i]]['x'])
-        pos2 = (graph.nodes[path[i + 1]]['y'], graph.nodes[path[i + 1]]['x'])
-        total_distance += geodesic(pos1, pos2).km
+        _, distance = dijkstra(graph, path[i], path[i + 1])
+        total_distance += distance
     return total_distance
 
-def generate_and_display_paths_drive_bike_walk(start_coords, end_coords):
-    # Map transport modes to their corresponding saved maps
-    transport_modes = {
-        'drive': 'drive_route_map.html',
-        'bike': 'bike_route_map.html',
-        'walk': 'walk_route_map.html'
-    }
+# 2-opt Algorithm to improve TSP route
+def two_opt(graph, path):
+    best_path = path
+    best_distance = calculate_total_distance(graph, best_path)
+    
+    improved = True
+    while improved:
+        improved = False
+        for i in range(1, len(path) - 2):
+            for j in range(i + 1, len(path) - 1):
+                if j - i == 1: continue  # Skip consecutive nodes
 
-    paths_info = {}
+                new_path = path[:i] + path[i:j][::-1] + path[j:]
+                new_distance = calculate_total_distance(graph, new_path)
+                
+                if new_distance < best_distance:
+                    best_path = new_path
+                    best_distance = new_distance
+                    improved = True
+        path = best_path
+    return best_path
 
-    # Generate routes for each transport mode
-    for mode, output_file in transport_modes.items():
-        graph = ox.graph_from_place("Singapore", network_type=mode, truncate_by_edge=False, simplify=False)
+def get_edges_from_path(path):
+    return [(path[i], path[i + 1]) for i in range(len(path) - 1)]
 
-        start_node = ox.distance.nearest_nodes(graph, X=start_coords[1], Y=start_coords[0])
-        end_node = ox.distance.nearest_nodes(graph, X=end_coords[1], Y=end_coords[0])
+# Function to apply penalty to prevent overlapping routes
+def apply_penalties_to_graph(graph, path, penalty_value):
+    penalties = {}
+    edges = get_edges_from_path(path)
+    for edge in edges:
+        penalties[edge] = penalty_value
+    return penalties
 
-        # Calculate paths using Dijkstra and A* algorithm
-        dijkstra_path, _ = dijkstra(graph, start_node, end_node)
-        a_star_path, _ = a_star(graph, start_node, end_node)
+# Function to calculate full route for TSP
+def calculate_full_tsp_route(graph, tsp_path, penalties=None):
+    full_path = []
+    for i in range(len(tsp_path) - 1):
+        segment_path, _ = dijkstra(graph, tsp_path[i], tsp_path[i + 1], penalties=penalties)
+        full_path.extend(segment_path[:-1])
+    full_path.append(tsp_path[-1])
+    return full_path
 
-        # Calculate distances
-        dijkstra_distance = calculate_distance(dijkstra_path, graph)
-        a_star_distance = calculate_distance(a_star_path, graph)
+# Define penalty for each transport mode. Increase if routes are overlapping too often
+penalty_factors = {
+    'drive': 0.8,
+    'bike': 1.5,
+    'walk': 3.2
+}
 
-        # Calculate emissions
-        dijkstra_emissions = dijkstra_distance * EMISSIONS_FACTORS[mode]
-        a_star_emissions = a_star_distance * EMISSIONS_FACTORS[mode]
+# Map transport modes to their corresponding saved maps
+transport_modes = {
+    'drive': 'drive_route_map.html',
+    'bike': 'bike_route_map.html',
+    'walk': 'walk_route_map.html'
+}
 
-        paths_info[mode] = {
-            'dijkstra': {
-                'path': dijkstra_path,
-                'distance': dijkstra_distance,  
-                'emissions': dijkstra_emissions  
-            },
-            'a_star': {
-                'path': a_star_path,
-                'distance': a_star_distance,  
-                'emissions': a_star_emissions  
-            },
-            'file': output_file
-        }
+# Input start and end coordinates from command-line arguments
+if len(sys.argv) != 5:
+    print("Usage: python drive_bike_walk_pathfinder.py <start_lat> <start_long> <end_lat> <end_long>")
+    sys.exit(1)
 
-        # Create a folium map centered around Singapore
-        map_sg = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
+start_coords = (float(sys.argv[1]), float(sys.argv[2]))
+end_coords = (float(sys.argv[3]), float(sys.argv[4]))
 
-        # Plot Dijkstra route
-        if dijkstra_path:
-            dijkstra_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in dijkstra_path]
-            folium.PolyLine(locations=dijkstra_path_coords, color='blue', weight=5, tooltip=f'Dijkstra {mode.capitalize()} Route').add_to(map_sg)
+# Generate routes for each transport mode
+for mode, output_file in transport_modes.items():
+    graph = ox.graph_from_place("Singapore", network_type=mode, truncate_by_edge=False, simplify=False)
 
-        # Plot A* route
-        if a_star_path:
-            a_star_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in a_star_path]
-            folium.PolyLine(locations=a_star_path_coords, color='red', weight=5, tooltip=f'A* {mode.capitalize()} Route').add_to(map_sg)
+    start_node = ox.distance.nearest_nodes(graph, X=start_coords[1], Y=start_coords[0])
+    end_node = ox.distance.nearest_nodes(graph, X=end_coords[1], Y=end_coords[0])
 
-        # Save the map
-        map_sg.save(output_file)
+    # Calculate original paths using Dijkstra/A* algorithm
+    dijkstra_path, dijkstra_distance = dijkstra(graph, start_node, end_node)
+    a_star_path, a_star_distance = a_star(graph, start_node, end_node)
 
-    return paths_info
+    # Generate random intermediate points
+    intermediate_nodes = random.sample(list(graph.nodes), 2)
+    tsp_nodes = [start_node] + intermediate_nodes + [end_node]
 
-if __name__ == "__main__":
-    # For testing purposes
-    start_coords = (1.390505, 103.986793)
-    end_coords = (1.379192, 103.759387)
-    generate_and_display_paths_drive_bike_walk(start_coords, end_coords)
+    # Use TSP with 2-opt to plot alternate routes
+    tsp_path = two_opt(graph, greedy_tsp(graph, tsp_nodes))
+    tsp_full_path = calculate_full_tsp_route(graph, tsp_path)
+
+    # Apply Penalties
+    penalty_factor = penalty_factors.get(mode, 1.5) # if not defined then set penalty as 1.5
+    penalties = apply_penalties_to_graph(graph, tsp_full_path, penalty_factor)
+
+    # Solve TSP for second route
+    tsp_path_alternate = two_opt(graph, greedy_tsp(graph, tsp_nodes))
+    tsp_full_path_alternate = calculate_full_tsp_route(graph, tsp_path_alternate, penalties=penalties)
+
+    # Create a folium map centered around Singapore
+    map_sg = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
+
+    # Plot Dijkstra route
+    if dijkstra_path:
+        dijkstra_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in dijkstra_path]
+        folium.PolyLine(locations=dijkstra_path_coords, color='blue', weight=5, tooltip=f'Dijkstra {mode.capitalize()} Route').add_to(map_sg)
+
+    # Plot A* route
+    if a_star_path:
+        a_star_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in a_star_path]
+        folium.PolyLine(locations=a_star_path_coords, color='red', weight=5, tooltip=f'A* {mode.capitalize()} Route').add_to(map_sg)
+
+    # Plot TSP route
+    tsp_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in tsp_full_path]
+    folium.PolyLine(locations=tsp_path_coords, color='purple', weight=5, tooltip=f'TSP {mode.capitalize()} Route').add_to(map_sg)
+
+    # Plot second TSP route
+    tsp_path_alternate_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in tsp_full_path_alternate]
+    folium.PolyLine(locations=tsp_path_alternate_coords, color='green', weight=5, tooltip=f'Alternate TSP {mode.capitalize()} Route').add_to(map_sg)
+
+    # Add markers for start and end points
+    folium.Marker(location=[start_coords[0], start_coords[1]], popup='Start', icon=folium.Icon(color='green')).add_to(map_sg)
+    folium.Marker(location=[end_coords[0], end_coords[1]], popup='End', icon=folium.Icon(color='red')).add_to(map_sg)
+
+    # Save the map
+    map_sg.save(output_file)
+
+# Print the path to the generated map
+print('drive_route_map.html')

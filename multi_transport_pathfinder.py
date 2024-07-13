@@ -3,7 +3,7 @@ import networkx as nx
 import osmnx as ox
 import folium
 import heapq
-from geopy.distance import geodesic
+import sys
 
 # Load the MRT stations and edges CSV files
 stations_file_path = './MRT_Stations.csv'
@@ -23,46 +23,13 @@ for idx, row in mrt_stations.iterrows():
 for idx, row in edges.iterrows():
     G.add_edge(row['Station'], row['Connected Station'])
 
-# Emission factors in grams of CO₂ per km
-emission_factors = {
-    'mrt': 28,  # grams of CO₂ per km for MRT
-    'drive': 170  # grams of CO₂ per km for petrol car
-}
+# Input start and end coordinates from command-line arguments
+if len(sys.argv) != 5:
+    print("Usage: python multi_transport_pathfinder.py <start_lat> <start_long> <end_lat> <end_long>")
+    sys.exit(1)
 
-# Generalized Dijkstra's Algorithm Function
-def dijkstra(graph, start, end, is_osm=False):
-    queue = [(0, start)]
-    distances = {node: float('infinity') for node in graph.nodes}
-    previous_nodes = {node: None for node in graph.nodes}
-    distances[start] = 0
-
-    while queue:
-        current_distance, current_node = heapq.heappop(queue)
-
-        if current_node == end:
-            path = []
-            while previous_nodes[current_node] is not None:
-                path.append(current_node)
-                current_node = previous_nodes[current_node]
-            path.append(start)
-            return path[::-1], distances[end]
-
-        if current_distance > distances[current_node]:
-            continue
-
-        for neighbor in graph.neighbors(current_node):
-            if is_osm:
-                weight = graph.edges[current_node, neighbor, 0].get('length', 1)
-            else:
-                weight = graph[current_node][neighbor].get('length', 1)
-            distance = current_distance + weight
-
-            if distance < distances[neighbor]:
-                distances[neighbor] = distance
-                previous_nodes[neighbor] = current_node
-                heapq.heappush(queue, (distance, neighbor))
-
-    return [], float('infinity')
+start_coords = (float(sys.argv[1]), float(sys.argv[2]))
+end_coords = (float(sys.argv[3]), float(sys.argv[4]))
 
 # Generalized A* Algorithm Function
 def heuristic(graph, node1, node2, coord_attr='pos'):
@@ -70,8 +37,8 @@ def heuristic(graph, node1, node2, coord_attr='pos'):
         (x1, y1) = graph.nodes[node1][coord_attr]
         (x2, y2) = graph.nodes[node2][coord_attr]
     else:
-        (x1, y1) = (graph.nodes[node1]['x'], graph.nodes[node1]['y'])
-        (x2, y2) = (graph.nodes[node2]['x'], graph.nodes[node2]['y'])
+        x1, y1 = graph.nodes[node1]['x'], graph.nodes[node1]['y']
+        x2, y2 = graph.nodes[node2]['x'], graph.nodes[node2]['y']
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
 def a_star(graph, start, end, coord_attr='pos', is_osm=False):
@@ -107,163 +74,136 @@ def a_star(graph, start, end, coord_attr='pos', is_osm=False):
 
     return [], float('infinity')
 
-def calculate_emissions(distance_km, mode):
-    return (distance_km * emission_factors[mode]) / 1000  # return emissions in kg
+# Download Singapore street network using osmnx
+place_name = "Singapore"
+graph = ox.graph_from_place(place_name, network_type='all', truncate_by_edge=True, simplify=True)
 
-def find_nearest_station(coords):
-    nearest_station = None
-    shortest_distance = float('inf')
+# Find the nearest nodes in the OSM network for each MRT station
+nearest_nodes = {}
+for idx, row in mrt_stations.iterrows():
+    nearest_node = ox.distance.nearest_nodes(graph, X=row['Longitude'], Y=row['Latitude'])
+    nearest_nodes[row['STN_NAME']] = nearest_node
+
+# Find the nearest nodes in the OSM network for start and end coordinates
+start_node = ox.distance.nearest_nodes(graph, X=start_coords[1], Y=start_coords[0])
+end_node = ox.distance.nearest_nodes(graph, X=end_coords[1], Y=end_coords[0])
+
+# Function to find the nearest MRT stations
+def find_nearest_stations(coords, mrt_stations, n=3):
+    distances = mrt_stations.apply(lambda row: ox.distance.euclidean(coords[0], coords[1], row['Latitude'], row['Longitude']), axis=1)
+    nearest_indices = distances.nsmallest(n).index
+    return mrt_stations.loc[nearest_indices, 'STN_NAME'].values
+
+# Find the nearest, second nearest, and third nearest MRT stations to the start and end coordinates
+nearest_start_stations = find_nearest_stations(start_coords, mrt_stations)
+nearest_end_stations = find_nearest_stations(end_coords, mrt_stations)
+
+# Function to compute heuristic distances for start and end point to nearest mrt stations
+def compute_heuristic_distance(start_coords, end_coords, start_station, end_station, mrt_stations):
+    start_station_coords = (mrt_stations.loc[mrt_stations['STN_NAME'] == start_station, 'Latitude'].values[0],
+                            mrt_stations.loc[mrt_stations['STN_NAME'] == start_station, 'Longitude'].values[0])
+    end_station_coords = (mrt_stations.loc[mrt_stations['STN_NAME'] == end_station, 'Latitude'].values[0],
+                          mrt_stations.loc[mrt_stations['STN_NAME'] == end_station, 'Longitude'].values[0])
+    start_to_station = ox.distance.euclidean(start_coords[0], start_coords[1], start_station_coords[0], start_station_coords[1])
+    station_to_end = ox.distance.euclidean(end_coords[0], end_coords[1], end_station_coords[0], end_station_coords[1])
+    return start_to_station + station_to_end
+
+# Generate combinations and their heuristic distances
+combinations = []
+for start_station in nearest_start_stations:
+    for end_station in nearest_end_stations:
+        distance = compute_heuristic_distance(start_coords, end_coords, start_station, end_station, mrt_stations)
+        combinations.append((start_station, end_station, distance))
+
+# Sort combinations by heuristic distance
+combinations.sort(key=lambda x: x[2])
+
+# Select top 3 combinations
+top_combinations = combinations[:3]
+
+print("Top combinations based on heuristic distance:")
+for comb in top_combinations:
+    print(f"Start: {comb[0]}, End: {comb[1]}, Distance: {comb[2]}")
+
+# Use A* algorithm to find the shortest paths in MRT network for top combinations
+a_star_paths = []
+for start_station, end_station, _ in top_combinations:
+    path, _ = a_star(G, start_station, end_station)
+    if path:
+        a_star_paths.append(path)
+
+# Print all paths found
+for i, path in enumerate(a_star_paths):
+    print(f"A* MRT path {i+1}:", path)
+
+# Convert MRT shortest paths to OSM shortest paths for plotting
+def convert_to_osm_path(shortest_path):
+    osm_path = []
+    for i in range(len(shortest_path) - 1):
+        start_node = nearest_nodes[shortest_path[i]]
+        end_node = nearest_nodes[shortest_path[i + 1]]
+        path, _ = a_star(graph, start_node, end_node, coord_attr='x', is_osm=True)
+        if not path:
+            print(f"No path between {shortest_path[i]} and {shortest_path[i + 1]}")
+            osm_path = []
+            break
+        osm_path.extend(path)
+    return osm_path
+
+osm_paths = []
+for path in a_star_paths:
+    osm_path = convert_to_osm_path(path)
+    if osm_path:
+        osm_paths.append(osm_path)
+
+# Function to plot paths
+def plot_paths(map_obj, start_to_mrt_path, mrt_to_end_path, mrt_path, start_to_mrt_distance, mrt_to_end_distance, mrt_color, algorithm_name):
+    # Add markers to MRT stations
     for idx, row in mrt_stations.iterrows():
-        station_coords = (row['Latitude'], row['Longitude'])
-        distance = geodesic(coords, station_coords).km
-        if distance < shortest_distance:
-            nearest_station = row['STN_NAME']
-            shortest_distance = distance
-    return nearest_station
+        folium.Marker(location=[row['Latitude'], row['Longitude']], popup=row['STN_NAME']).add_to(map_obj)
 
-def generate_and_display_paths_multi_transport(start, end):
-    # Determine if start and end are coordinates or station names
-    try:
-        start_coords = tuple(map(float, start.split(',')))
-        start_station = find_nearest_station(start_coords)
-    except ValueError:
-        start_station = start
+    # Plot walking/biking path from start coordinate to nearest MRT station
+    if start_to_mrt_path:
+        start_to_mrt_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in start_to_mrt_path]
+        print("Distance from Start coords to MRT station:", start_to_mrt_distance)
+        if start_to_mrt_distance <= 1000: # plot a walk route if distance is less than 1000m
+            folium.PolyLine(locations=start_to_mrt_coords, color='green', weight=5, tooltip=f'Walking Start to MRT ({algorithm_name})').add_to(map_obj)
+        else:
+            folium.PolyLine(locations=start_to_mrt_coords, color='purple', weight=5, tooltip=f'Biking Start to MRT ({algorithm_name})').add_to(map_obj)
 
-    try:
-        end_coords = tuple(map(float, end.split(',')))
-        end_station = find_nearest_station(end_coords)
-    except ValueError:
-        end_station = end
+    # Plot walking/biking path from nearest MRT station to end coordinate
+    if mrt_to_end_path:
+        mrt_to_end_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in mrt_to_end_path]
+        print("Distance from MRT station to end coords:", mrt_to_end_distance)
+        if mrt_to_end_distance <= 1000: # plot a walk route if distance is less than 1000m
+            folium.PolyLine(locations=mrt_to_end_coords, color='green', weight=5, tooltip=f'Walking MRT to End ({algorithm_name})').add_to(map_obj)
+        else:
+            folium.PolyLine(locations=mrt_to_end_coords, color='purple', weight=5, tooltip=f'Biking MRT to End ({algorithm_name})').add_to(map_obj)
 
-    # Find the coordinates of the start and end stations
-    start_coords = (mrt_stations.loc[mrt_stations['STN_NAME'] == start_station, 'Latitude'].values[0],
-                    mrt_stations.loc[mrt_stations['STN_NAME'] == start_station, 'Longitude'].values[0])
-    end_coords = (mrt_stations.loc[mrt_stations['STN_NAME'] == end_station, 'Latitude'].values[0],
-                  mrt_stations.loc[mrt_stations['STN_NAME'] == end_station, 'Longitude'].values[0])
+    # Plot the MRT path
+    if mrt_path:
+        mrt_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in mrt_path]
+        folium.PolyLine(locations=mrt_path_coords, color=mrt_color, weight=5, tooltip=f'MRT Path ({algorithm_name})').add_to(map_obj)
 
-    # Download Singapore street network using osmnx
-    place_name = "Singapore"
-    graph = ox.graph_from_place(place_name, network_type='all', truncate_by_edge=True, simplify=True)
+    # Add markers for start and end points
+    folium.Marker(location=[start_coords[0], start_coords[1]], popup='Start', icon=folium.Icon(color='green')).add_to(map_obj)
+    folium.Marker(location=[end_coords[0], end_coords[1]], popup='End', icon=folium.Icon(color='red')).add_to(map_obj)
 
-    # Find the nearest nodes in the OSM network for each MRT station
-    nearest_nodes = {}
-    for idx, row in mrt_stations.iterrows():
-        nearest_node = ox.distance.nearest_nodes(graph, X=row['Longitude'], Y=row['Latitude'])
-        nearest_nodes[row['STN_NAME']] = nearest_node
+# Plot paths on maps
+maps = []
+colors = ['red', 'blue', 'green'] # Colors for mrt routes
+for i, osm_path in enumerate(osm_paths):
+    map_obj = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
+    start_station = top_combinations[i][0]
+    end_station = top_combinations[i][1]
+    start_to_mrt_path, start_to_mrt_distance = a_star(graph, start_node, nearest_nodes[start_station], coord_attr='x', is_osm=True)
+    mrt_to_end_path, mrt_to_end_distance = a_star(graph, nearest_nodes[end_station], end_node, coord_attr='x', is_osm=True)
+    plot_paths(map_obj, start_to_mrt_path, mrt_to_end_path, osm_path, start_to_mrt_distance, mrt_to_end_distance, colors[i % len(colors)], f'A* Path {i+1}')
+    maps.append(map_obj)
 
-    # Find the nearest nodes in the OSM network for start and end coordinates
-    start_node = ox.distance.nearest_nodes(graph, X=start_coords[1], Y=start_coords[0])
-    end_node = ox.distance.nearest_nodes(graph, X=end_coords[1], Y=end_coords[0])
+# Save and display the maps
+for i, map_obj in enumerate(maps):
+    map_obj.save(f'multi_transport_{i+1}.html')
 
-    # Find the nearest MRT station to the start and end coordinates
-    nearest_start_station = find_nearest_station(start_coords)
-    nearest_end_station = find_nearest_station(end_coords)
-
-    # Use the generalized Dijkstra function to find the shortest path in MRT network
-    dijkstra_shortest_path, dijkstra_mrt_distance = dijkstra(G, nearest_start_station, nearest_end_station)
-    print("Dijkstra MRT shortest path:", dijkstra_shortest_path)
-
-    # Use the generalized A* function to find the shortest path in MRT network
-    a_star_shortest_path, a_star_mrt_distance = a_star(G, nearest_start_station, nearest_end_station)
-    print("A* MRT shortest path:", a_star_shortest_path)
-
-    # Calculate MRT emissions
-    dijkstra_mrt_emissions = calculate_emissions(dijkstra_mrt_distance / 1000, 'mrt')
-    a_star_mrt_emissions = calculate_emissions(a_star_mrt_distance / 1000, 'mrt')
-
-    # Convert MRT shortest path to OSM shortest path for plotting
-    def convert_to_osm_path(shortest_path, algorithm):
-        osm_path = []
-        total_distance = 0
-        for i in range(len(shortest_path) - 1):
-            start_node = nearest_nodes[shortest_path[i]]
-            end_node = nearest_nodes[shortest_path[i + 1]]
-            if algorithm == 'dijkstra':
-                path, distance = dijkstra(graph, start_node, end_node, is_osm=True)
-            elif algorithm == 'a_star':
-                path, distance = a_star(graph, start_node, end_node, coord_attr='x', is_osm=True)
-            else:
-                raise ValueError("Invalid algorithm specified. Use 'dijkstra' or 'a_star'.")
-            if not path:
-                print(f"No path between {shortest_path[i]} and {shortest_path[i + 1]}")
-                osm_path = []
-                break
-            osm_path.extend(path)
-            total_distance += distance
-        return osm_path, total_distance
-
-    # Convert paths to OSM paths using Dijkstra and A* algorithms
-    osm_dijkstra_path, osm_dijkstra_distance = convert_to_osm_path(dijkstra_shortest_path, 'dijkstra')
-    osm_a_star_path, osm_a_star_distance = convert_to_osm_path(a_star_shortest_path, 'a_star')
-
-    # Find the walking/biking paths from the start coordinate to the nearest MRT station and from the nearest MRT station to the end coordinate
-    start_to_mrt_dijkstra_path, start_to_mrt_dijkstra_distance = dijkstra(graph, start_node, nearest_nodes[nearest_start_station], is_osm=True)
-    end_to_mrt_dijkstra_path, end_to_mrt_dijkstra_distance = dijkstra(graph, nearest_nodes[nearest_end_station], end_node, is_osm=True)
-
-    start_to_mrt_a_star_path, start_to_mrt_a_star_distance = a_star(graph, start_node, nearest_nodes[nearest_start_station], coord_attr='x', is_osm=True)
-    end_to_mrt_a_star_path, end_to_mrt_a_star_distance = a_star(graph, nearest_nodes[nearest_end_station], end_node, coord_attr='x', is_osm=True)
-
-    # Create folium maps centered around Singapore for Dijkstra and A*
-    map_dijkstra = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
-    map_a_star = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
-
-    # Function to plot paths
-    def plot_paths(map_obj, start_to_mrt_path, mrt_path, mrt_to_end_path, start_to_mrt_distance, mrt_distance, mrt_to_end_distance, mrt_color, algorithm_name):
-        # Add markers to MRT stations
-        for idx, row in mrt_stations.iterrows():
-            folium.Marker(location=[row['Latitude'], row['Longitude']], popup=row['STN_NAME']).add_to(map_obj)
-
-        # Plot walking/biking path from start coordinate to nearest MRT station
-        if start_to_mrt_path:
-            start_to_mrt_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in start_to_mrt_path]
-            print("Distance from Start coords to MRT station:", start_to_mrt_distance)
-            if start_to_mrt_distance <= 1: # plot a walk route if distance is less than 1km
-                folium.PolyLine(locations=start_to_mrt_coords, color='green', weight=5, tooltip=f'Walking Start to MRT ({algorithm_name})').add_to(map_obj)
-            else:
-                folium.PolyLine(locations=start_to_mrt_coords, color='purple', weight=5, tooltip=f'Biking Start to MRT ({algorithm_name})').add_to(map_obj)
-
-        # Plot walking/biking path from nearest MRT station to end coordinate
-        if mrt_to_end_path:
-            mrt_to_end_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in mrt_to_end_path]
-            print("Distance from MRT station to end coords:", mrt_to_end_distance)
-            if mrt_to_end_distance <= 1: # plot a walk route if distance is less than 1km
-                folium.PolyLine(locations=mrt_to_end_coords, color='green', weight=5, tooltip=f'Walking MRT to End ({algorithm_name})').add_to(map_obj)
-            else:
-                folium.PolyLine(locations=mrt_to_end_coords, color='purple', weight=5, tooltip=f'Biking MRT to End ({algorithm_name})').add_to(map_obj)
-
-        # Plot MRT route on the map
-        if mrt_path:
-            mrt_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in mrt_path]
-            folium.PolyLine(locations=mrt_path_coords, color=mrt_color, weight=5, tooltip=f'{algorithm_name} MRT').add_to(map_obj)
-
-    # Plot paths on the Dijkstra map
-    plot_paths(map_dijkstra, start_to_mrt_dijkstra_path, osm_dijkstra_path, end_to_mrt_dijkstra_path, start_to_mrt_dijkstra_distance, dijkstra_mrt_distance, end_to_mrt_dijkstra_distance, 'blue', 'Dijkstra')
-
-    # Plot paths on the A* map
-    plot_paths(map_a_star, start_to_mrt_a_star_path, osm_a_star_path, end_to_mrt_a_star_path, start_to_mrt_a_star_distance, a_star_mrt_distance, end_to_mrt_a_star_distance, 'red', 'A*')
-
-    # Save and display the maps
-    map_dijkstra.save('multi_transport_dijkstra.html')
-    map_a_star.save('multi_transport_a_star.html')
-
-    results = {
-        "dijkstra": {
-            "path": dijkstra_shortest_path,
-            "distance": dijkstra_mrt_distance,
-            "emissions": dijkstra_mrt_emissions
-        },
-        "a_star": {
-            "path": a_star_shortest_path,
-            "distance": a_star_mrt_distance,
-            "emissions": a_star_mrt_emissions
-        }
-    }
-
-    return results
-
-if __name__ == "__main__":
-    # For testing purposes
-    start_station = '1.390505,103.986793'  # Coordinates instead of station name
-    end_station = '1.379192,103.759387'    # Coordinates instead of station name
-    results = generate_and_display_paths_multi_transport(start_station, end_station)
-    print("Results:", results)
+# Print the path to the generated map
+print('multi_transport_1.html')
