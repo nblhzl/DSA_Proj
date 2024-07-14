@@ -149,11 +149,18 @@ def calculate_full_tsp_route(graph, tsp_path, penalties=None):
     full_path.append(tsp_path[-1])
     return full_path
 
-# Define penalty for each transport mode. Increase if routes are overlapping too often
+# Individually define penalty for each transport mode. Increase if routes are overlapping too often
 penalty_factors = {
-    'drive': 1.0,
-    'bike': 1.5,
+    'drive': 1.8,
+    'bike': 2.6,
     'walk': 3.4
+}
+
+# Individually define number of intermediate nodes for each transport mode
+intermediate_nodes_count = {
+    'drive': 3,
+    'bike': 2,
+    'walk': 2
 }
 
 # Map transport modes to their corresponding saved maps
@@ -174,12 +181,12 @@ for mode in transport_modes:
     start_node = ox.distance.nearest_nodes(graph, X=start_coords[1], Y=start_coords[0])
     end_node = ox.distance.nearest_nodes(graph, X=end_coords[1], Y=end_coords[0])
 
-    # Calculate original paths using Dijkstra/A* algorithm
-    dijkstra_path, dijkstra_distance = dijkstra(graph, start_node, end_node)
+    # Calculate original paths using A* algorithm
     a_star_path, a_star_distance = a_star(graph, start_node, end_node)
 
-    # Generate random intermediate points
-    intermediate_nodes = random.sample(list(graph.nodes), 2)
+    # Generate random intermediate points based on transport mode
+    num_intermediate_nodes = intermediate_nodes_count[mode]
+    intermediate_nodes = random.sample(list(graph.nodes), num_intermediate_nodes)
     tsp_nodes = [start_node] + intermediate_nodes + [end_node]
 
     # Use TSP with 2-opt to plot alternate routes
