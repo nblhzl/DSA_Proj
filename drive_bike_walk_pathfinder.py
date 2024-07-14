@@ -151,17 +151,13 @@ def calculate_full_tsp_route(graph, tsp_path, penalties=None):
 
 # Define penalty for each transport mode. Increase if routes are overlapping too often
 penalty_factors = {
-    'drive': 0.8,
+    'drive': 1.0,
     'bike': 1.5,
-    'walk': 3.2
+    'walk': 3.4
 }
 
 # Map transport modes to their corresponding saved maps
-transport_modes = {
-    'drive': 'drive_route_map.html',
-    'bike': 'bike_route_map.html',
-    'walk': 'walk_route_map.html'
-}
+transport_modes = ['drive', 'bike', 'walk']
 
 # Input start and end coordinates from command-line arguments
 if len(sys.argv) != 5:
@@ -172,7 +168,7 @@ start_coords = (float(sys.argv[1]), float(sys.argv[2]))
 end_coords = (float(sys.argv[3]), float(sys.argv[4]))
 
 # Generate routes for each transport mode
-for mode, output_file in transport_modes.items():
+for mode in transport_modes:
     graph = ox.graph_from_place("Singapore", network_type=mode, truncate_by_edge=False, simplify=False)
 
     start_node = ox.distance.nearest_nodes(graph, X=start_coords[1], Y=start_coords[0])
@@ -198,33 +194,26 @@ for mode, output_file in transport_modes.items():
     tsp_path_alternate = two_opt(graph, greedy_tsp(graph, tsp_nodes))
     tsp_full_path_alternate = calculate_full_tsp_route(graph, tsp_path_alternate, penalties=penalties)
 
-    # Create a folium map centered around Singapore
-    map_sg = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
+    # Plot each route on separate maps
+    for idx, (path, color, label) in enumerate([
+        (a_star_path, 'red', f'A* {mode.capitalize()} Route'),
+        (tsp_full_path, 'blue', f'TSP {mode.capitalize()} Route'),
+        (tsp_full_path_alternate, 'green', f'Alternate TSP {mode.capitalize()} Route')
+    ], start=1):
+        map_sg = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
 
-    # Plot Dijkstra route
-    if dijkstra_path:
-        dijkstra_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in dijkstra_path]
-        folium.PolyLine(locations=dijkstra_path_coords, color='blue', weight=5, tooltip=f'Dijkstra {mode.capitalize()} Route').add_to(map_sg)
+        if path:
+            path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in path]
+            folium.PolyLine(locations=path_coords, color=color, weight=5, tooltip=label).add_to(map_sg)
 
-    # Plot A* route
-    if a_star_path:
-        a_star_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in a_star_path]
-        folium.PolyLine(locations=a_star_path_coords, color='red', weight=5, tooltip=f'A* {mode.capitalize()} Route').add_to(map_sg)
+        # Add markers for start and end points
+        folium.Marker(location=[start_coords[0], start_coords[1]], popup='Start', icon=folium.Icon(color='green')).add_to(map_sg)
+        folium.Marker(location=[end_coords[0], end_coords[1]], popup='End', icon=folium.Icon(color='red')).add_to(map_sg)
 
-    # Plot TSP route
-    tsp_path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in tsp_full_path]
-    folium.PolyLine(locations=tsp_path_coords, color='purple', weight=5, tooltip=f'TSP {mode.capitalize()} Route').add_to(map_sg)
+        # Save the map
+        map_sg.save(f'{mode}_route_{idx}.html')
 
-    # Plot second TSP route
-    tsp_path_alternate_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in tsp_full_path_alternate]
-    folium.PolyLine(locations=tsp_path_alternate_coords, color='green', weight=5, tooltip=f'Alternate TSP {mode.capitalize()} Route').add_to(map_sg)
-
-    # Add markers for start and end points
-    folium.Marker(location=[start_coords[0], start_coords[1]], popup='Start', icon=folium.Icon(color='green')).add_to(map_sg)
-    folium.Marker(location=[end_coords[0], end_coords[1]], popup='End', icon=folium.Icon(color='red')).add_to(map_sg)
-
-    # Save the map
-    map_sg.save(output_file)
-
-# Print the path to the generated map
-print('drive_route_map.html')
+# Print the paths to the generated maps
+for mode in transport_modes:
+    for i in range(1, 4):
+        print(f'{mode}_route_{i}.html')
