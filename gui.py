@@ -272,11 +272,14 @@ class RoutePlannerApp(QMainWindow):
         mode_layout.addWidget(mode_label)
         modes = ['Car', 'Bike', 'Walking', 'MRT', 'Multi-Transport']
         self.mode_buttons = {}
-        for mode in modes:
+        for index, mode in enumerate(modes):
             mode_button = QRadioButton(mode)
+            if index == 0:
+                mode_button.setChecked(True)
             mode_button.toggled.connect(lambda checked, m=mode.lower(): self.update_inputs(m))
             mode_layout.addWidget(mode_button)
             self.mode_buttons[mode.lower()] = mode_button
+            
 
         main_layout.addLayout(mode_layout)
 
@@ -380,13 +383,18 @@ class RoutePlannerApp(QMainWindow):
             if not output:
                 QMessageBox.critical(self, "Execution Error", "No output file generated.")
                 return
+            
+            # if html exists do the load here
+            # self.route.load_map("DSA_Proj/singapore_driving_route.html")
 
+
+            # old route text code
             # Display routes in the textbox
-            self.route_text.clear()
-            for line in output:
-                self.route_text.append(line)
-                if line.endswith('.html'):
-                    self.display_html(line)
+            # self.route_text.clear()
+            # for line in output:
+            #     self.route_text.append(line)
+            #     if line.endswith('.html'):
+            #         self.display_html(line)
         except subprocess.CalledProcessError as e:
             QMessageBox.critical(self, "Execution Error", f"An error occurred while running the script:\n{e.stderr}")
 
