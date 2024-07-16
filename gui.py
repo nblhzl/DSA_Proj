@@ -25,6 +25,11 @@ class EmbedMap(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
+        self.map_file = ""
+        self.map_label = QLabel("Map file: ")
+        layout.addWidget(self.map_label)
+
+
         # Set up the web view
         self.web_view = QWebEngineView()
         self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
@@ -34,6 +39,8 @@ class EmbedMap(QMainWindow):
         if os.path.exists(map_path):
             self.map_path = os.path.abspath(map_path)
             self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
+            self.map_file = os.path.basename(self.map_path)
+            self.map_label.setText("Map file: " + self.map_file)
 
 class MapManager(QObject):
     # manage map clicks, marker dragged etc
