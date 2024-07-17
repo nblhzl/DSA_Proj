@@ -204,3 +204,8 @@ for i, osm_path in enumerate(osm_paths):
 # Save and display the maps
 for i, map_obj in enumerate(maps):
     map_obj.save(f'multi_transport_{i+1}.html')
+
+# Print the path to the generated map
+print('multi_transport_1.html')
+print('multi_transport_2.html')
+print('multi_transport_3.html')
