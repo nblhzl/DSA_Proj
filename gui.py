@@ -429,11 +429,16 @@ class RoutePlannerApp(QMainWindow):
             if widget is not None:
                 widget.deleteLater()
 
-        # Add web views for each route file
-        for route_file in route_files:
-            if route_file.endswith('.html'):
+        route_files.sort()
+
+        # Add labels and web views for each route file
+        route_labels = ["Shortest Route:", "Alternate Route 1:", "Alternate Route 2:"]
+        for idx, route_file in enumerate(route_files):
+            if route_file.endswith('.html') and idx < len(route_labels):
+                route_label = QLabel(route_labels[idx])
                 web_view = QWebEngineView()
                 web_view.setUrl(QUrl.fromLocalFile(os.path.abspath(route_file)))
+                layout.addWidget(route_label)
                 layout.addWidget(web_view)
 
         self.route.map_label.setText(f"Generated Routes: {', '.join(os.path.basename(f) for f in route_files if f.endswith('.html'))}")
