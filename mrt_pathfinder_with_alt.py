@@ -211,6 +211,3 @@ map_3.save('mrt_route_3.html')
 print("Route 1:", a_star_shortest_path)
 for i, path in enumerate(k_shortest_paths[1:], start=2):
     print(f"Route {i}:", path)
-print('mrt_route_1.html')
-print('mrt_route_2.html')
-print('mrt_route_3.html')

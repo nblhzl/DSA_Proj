@@ -1,151 +1,383 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-import webbrowser
-import subprocess
+import os
+import sys
+import json
+
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QRadioButton, QLineEdit, QComboBox, QPushButton, QTextEdit, QMessageBox
+from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtCore import QUrl, pyqtSignal, QObject, pyqtSlot
+from PyQt5.QtWebChannel import QWebChannel
+import folium
+
 import pandas as pd
-from tkintermapview import TkinterMapView
+import subprocess
 
-class RoutePlannerApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Route Planner")
+class EmbedMap(QMainWindow):
+    def __init__(self, map_path=None):
+        super().__init__()
+        self.map_path = map_path
+        # Set up the main window
+        self.setWindowTitle("Map Viewer")
+        self.setGeometry(100, 100, 800, 600)
 
-        self.mode_var = tk.StringVar(value='car')
-        self.start_var = tk.StringVar()
-        self.end_var = tk.StringVar()
+        # Set up layout
+        layout = QVBoxLayout()
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+
+        self.map_file = ""
+        self.map_label = QLabel("Map file: ")
+        layout.addWidget(self.map_label)
+
+
+        # Set up the web view
+        self.web_view = QWebEngineView()
+        self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
+        layout.addWidget(self.web_view)
+    
+    def load_map(self, map_path):
+        if os.path.exists(map_path):
+            self.map_path = os.path.abspath(map_path)
+            self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
+            self.map_file = os.path.basename(self.map_path)
+            self.map_label.setText("Map file: " + self.map_file)
+
+class MapManager(QObject):
+    # manage map clicks, marker dragged etc
+
+    clicked = pyqtSignal(float, float)
+    marker_dragged = pyqtSignal(str, float, float)
+
+    @pyqtSlot(str, str)
+    def receive_data(self, message, json_data):
+        data = json.loads(json_data)
+        if message == "click":
+            self.clicked.emit(data["lat"], data["lng"])
+        elif message == "dragend":
+            self.marker_dragged.emit(data["type"], data["lat"], data["lng"])
+
+class MapView(QMainWindow):
+    # signal to update other class
+    start_coordinates_changed = pyqtSignal(float, float)
+    end_coordinates_changed = pyqtSignal(float, float)
+    clear_button_pressed = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+
+        # Initialize map
+        self.map = folium.Map(location=[1.3521, 103.8198], zoom_start=12)  # Singapore coordinates
+
+        # Flags to track clicks and markers
+        self.click_count = 0
+        self.start_marker = None
+        self.end_marker = None
+
+        # location of map.html to pick start and end coords
+        self.map_path = os.path.abspath("./map.html")
+
+
+        # Save map as HTML
+        self.save_map()
+
+        # Set up the main window
+        self.setWindowTitle("Map Viewer")
+        self.setGeometry(100, 100, 800, 600)
+
+        # Set up layout
+        layout = QVBoxLayout()
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+
+        # Set up the web view
+        self.web_view = QWebEngineView()
+
+        # Qwebchannel for python and html file to interact with each other
+        channel = QWebChannel(self.web_view)
+        map_manager = MapManager(self)
+        channel.registerObject("map_manager", map_manager)
+        self.web_view.page().setWebChannel(channel)
+        
+        self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
+        layout.addWidget(self.web_view)
+
+        # Add buttons and labels for getting coordinates and clearing markers
+        # self.start_coord_label = QLabel("Start Coordinates: None")
+        # self.end_coord_label = QLabel("End Coordinates: None")
+        self.clear_button = QPushButton("Clear Markers")
+        self.clear_button.clicked.connect(self.clear_markers)
+
+        # layout.addWidget(self.start_coord_label)
+        # layout.addWidget(self.end_coord_label)
+        layout.addWidget(self.clear_button)
+
+        
+        map_manager.clicked.connect(self.handle_click)
+        map_manager.marker_dragged.connect(self.handle_marker_dragged)
+
+    # click event on the map
+    def handle_click(self, lat, lng):
+        if self.click_count > 1:
+            return
+        if self.click_count == 0:
+            self.start_marker = folium.Marker(
+                location=[lat, lng],
+                draggable=True,
+                icon=folium.Icon(color='blue'),
+                popup=f"Start: ({lat}, {lng})"
+            )
+            self.start_marker.add_to(self.map)
+            self.click_count += 1
+            # self.start_coord_label.setText(f"Start Coordinates: ({lat}, {lng})")
+            self.start_coordinates_changed.emit(lat, lng)  # Emit signal
+        elif self.click_count == 1:
+            self.end_marker = folium.Marker(
+                location=[lat, lng],
+                draggable=True,
+                icon=folium.Icon(color='red'),
+                popup=f"End: ({lat}, {lng})"
+            )
+            self.end_marker.add_to(self.map)
+            self.click_count += 1
+            # self.end_coord_label.setText(f"End Coordinates: ({lat}, {lng})")
+            self.end_coordinates_changed.emit(lat, lng)  # Emit signal
+
+        self.save_map()
+        self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
+
+    def get_start_coordinates(self):
+        if self.start_marker:
+            return self.start_marker.location
+        else:
+            return None
+
+    def get_end_coordinates(self):
+        if self.end_marker:
+            return self.end_marker.location
+        else:
+            return None
+        
+    def handle_marker_dragged(self, marker_type, lat, lng):
+        if marker_type == "start":
+            # self.start_coord_label.setText(f"Start Coordinates: ({lat}, {lng})")
+            self.start_marker.location = [lat, lng]
+            self.start_coordinates_changed.emit(lat, lng)  # Emit signal
+        elif marker_type == "end":
+            # self.end_coord_label.setText(f"End Coordinates: ({lat}, {lng})")
+            self.end_marker.location = [lat, lng]
+            self.end_coordinates_changed.emit(lat, lng)  # Emit signal
+
+        # self.update_map()
+        self.save_map()
+        # self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
+
+    def update_map(self):
+        # self.map = folium.Map(location=[1.3521, 103.8198], zoom_start=12)  # Reset the map
+        if self.start_marker:
+            folium.Marker(
+                location=self.start_marker.location,
+                draggable=True,
+                icon=folium.Icon(color='blue'),
+                popup=f"Start: ({self.start_marker.location[0]}, {self.start_marker.location[1]})"
+            ).add_to(self.map)
+        if self.end_marker:
+            folium.Marker(
+                location=self.end_marker.location,
+                draggable=True,
+                icon=folium.Icon(color='red'),
+                popup=f"End: ({self.end_marker.location[0]}, {self.end_marker.location[1]})"
+            ).add_to(self.map)
+
+    def clear_markers(self):
+        self.map = folium.Map(location=[1.3521, 103.8198], zoom_start=12)  # Reset the map
+        self.start_marker = None
+        self.end_marker = None
+        self.click_count = 0
+        self.save_map()
+        self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
+        self.clear_button_pressed.emit("")
+        # self.start_coord_label.setText("Start Coordinates: None")
+        # self.end_coord_label.setText("End Coordinates: None")
+        
+
+    def save_map(self):
+        map_html = self.map.get_root().render()
+        custom_js = """
+        <script
+            type="text/javascript"
+            src="qrc:///qtwebchannel/qwebchannel.js"
+        ></script>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var map_manager = null;
+            // Function to handle click events on the map
+            function onMapClick(e) {
+                var data = JSON.stringify(e.latlng)
+                map_manager.receive_data("click", data);
+            }
+            new QWebChannel(qt.webChannelTransport, function (channel) {
+                map_manager = channel.objects.map_manager;
+            });
+            var map_id = document.getElementsByClassName('folium-map')[0].id;
+            var lmap = window[map_id];
+            lmap.addEventListener("click", onMapClick);
+
+            
+            function addDragEndListener(marker, type) {
+                marker.addEventListener("dragend", function(e) {
+                    var data = JSON.stringify({
+                        type: type,
+                        lat: e.target.getLatLng().lat,
+                        lng: e.target.getLatLng().lng
+                    });
+                    map_manager.receive_data("dragend", data);
+                });
+            }
+            lmap.eachLayer(function(layer) {
+                if (layer instanceof L.Marker) {
+                    if (layer.options.icon.options.markerColor === 'blue') {
+                        addDragEndListener(layer, 'start');
+                    } else if (layer.options.icon.options.markerColor === 'red') {
+                        addDragEndListener(layer, 'end');
+                    }
+                }
+            });
+        });
+        </script>
+        """
+        with open(self.map_path, "w") as f:
+            f.write(map_html + custom_js)
+        
+
+class RoutePlannerApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Route Planner")
+        self.mode_var = 'car'
+        self.start_var = ''
+        self.end_var = ''
 
         # Load MRT stations
         self.mrt_stations = self.load_mrt_stations()
-        self.create_widgets()
+
+        self.initUI()
 
     def load_mrt_stations(self):
         mrt_stations_file = './MRT_Stations.csv'
         mrt_stations_df = pd.read_csv(mrt_stations_file)
         return mrt_stations_df['STN_NAME'].tolist()
 
-    def create_widgets(self):
-        # Create a canvas to enable scrolling
-        canvas = tk.Canvas(self.root)
-        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
+    def initUI(self):
+        main_widget = QWidget()
+        self.setCentralWidget(main_widget)
+        main_layout = QVBoxLayout()
 
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(
-                scrollregion=canvas.bbox("all")
-            )
-        )
-
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        canvas.grid(row=0, column=0, sticky="nsew")
-        scrollbar.grid(row=0, column=1, sticky="ns")
-
-        self.root.grid_rowconfigure(0, weight=1)
-        self.root.grid_columnconfigure(0, weight=1)
-        
         # Mode selection
-        ttk.Label(scrollable_frame, text="Select Mode of Transportation:").grid(row=0, column=0, padx=10, pady=10, sticky='w')
+        mode_layout = QHBoxLayout()
+        mode_label = QLabel("Select Mode of Transportation:")
+        mode_layout.addWidget(mode_label)
         modes = ['Car', 'Bike', 'Walking', 'MRT', 'Multi-Transport']
-        for idx, mode in enumerate(modes):
-            ttk.Radiobutton(scrollable_frame, text=mode, variable=self.mode_var, value=mode.lower(), command=self.update_inputs).grid(row=0, column=idx+1, padx=5, pady=10, sticky='w')
+        self.mode_buttons = {}
+        for index, mode in enumerate(modes):
+            mode_button = QRadioButton(mode)
+            if index == 0:
+                mode_button.setChecked(True)
+            mode_button.toggled.connect(lambda checked, m=mode.lower(): self.update_inputs(m))
+            mode_layout.addWidget(mode_button)
+            self.mode_buttons[mode.lower()] = mode_button
+            
+
+        main_layout.addLayout(mode_layout)
 
         # Start and end points input
-        ttk.Label(scrollable_frame, text="Start Point:").grid(row=1, column=0, padx=10, pady=10, sticky='w')
-        self.start_entry = ttk.Entry(scrollable_frame, textvariable=self.start_var)
-        self.start_entry.grid(row=1, column=1, columnspan=4, padx=10, pady=10, sticky='ew')
+        start_layout = QHBoxLayout()
+        start_label = QLabel("Start Point:")
+        self.start_entry = QLineEdit()
+        self.start_dropdown = QComboBox()
+        self.start_dropdown.addItems(self.mrt_stations)
+        self.start_dropdown.setVisible(False)
+        start_layout.addWidget(start_label)
+        start_layout.addWidget(self.start_entry)
+        start_layout.addWidget(self.start_dropdown)
+        main_layout.addLayout(start_layout)
 
-        self.start_dropdown = ttk.Combobox(scrollable_frame, textvariable=self.start_var, values=self.mrt_stations)
-        self.start_dropdown.grid(row=1, column=1, columnspan=4, padx=10, pady=10, sticky='ew')
-        self.start_dropdown.grid_remove()
-
-        ttk.Label(scrollable_frame, text="End Point:").grid(row=2, column=0, padx=10, pady=10, sticky='w')
-        self.end_entry = ttk.Entry(scrollable_frame, textvariable=self.end_var)
-        self.end_entry.grid(row=2, column=1, columnspan=4, padx=10, pady=10, sticky='ew')
-
-        self.end_dropdown = ttk.Combobox(scrollable_frame, textvariable=self.end_var, values=self.mrt_stations)
-        self.end_dropdown.grid(row=2, column=1, columnspan=4, padx=10, pady=10, sticky='ew')
-        self.end_dropdown.grid_remove()
+        end_layout = QHBoxLayout()
+        end_label = QLabel("End Point:")
+        self.end_entry = QLineEdit()
+        self.end_dropdown = QComboBox()
+        self.end_dropdown.addItems(self.mrt_stations)
+        self.end_dropdown.setVisible(False)
+        end_layout.addWidget(end_label)
+        end_layout.addWidget(self.end_entry)
+        end_layout.addWidget(self.end_dropdown)
+        main_layout.addLayout(end_layout)
 
         # Map view for setting start and end points
-        self.map_widget = TkinterMapView(scrollable_frame, width=800, height=600, corner_radius=0)
-        self.map_widget.grid(row=3, column=0, columnspan=5, padx=10, pady=10, sticky='nsew')
-        self.map_widget.set_position(1.3521, 103.8198)  # Center the map on Singapore
-        self.map_widget.set_zoom(12)
-
-        self.map_widget.add_left_click_map_command(self.set_marker)
-
-        self.start_marker = None
-        self.end_marker = None
+        self.map_view = MapView()
+        main_layout.addWidget(self.map_view)
+        self.map_view.start_coordinates_changed.connect(self.update_start_entry)
+        self.map_view.end_coordinates_changed.connect(self.update_end_entry)
+        self.map_view.clear_button_pressed.connect(self.clear_coords)
 
         # Route display textbox
-        self.route_text = tk.Text(scrollable_frame, height=20, width=100)
-        self.route_text.grid(row=4, column=0, columnspan=5, padx=10, pady=10, sticky='ew')
+        # self.route_text = QTextEdit()
+        # main_layout.addWidget(self.route_text)
+
+        # Route html embed
+        self.route = EmbedMap()
+        main_layout.addWidget(self.route)
+        # self.route.load_map("./singapore_driving_route.html")
 
         # Run button
-        ttk.Button(scrollable_frame, text="Generate Route", command=self.run_script).grid(row=5, column=0, columnspan=5, pady=20)
+        run_button = QPushButton("Generate Route")
+        run_button.clicked.connect(self.run_script)
+        main_layout.addWidget(run_button)
+        main_widget.setLayout(main_layout)
+    @pyqtSlot(str)
+    def clear_coords(self, string):
+        self.start_entry.setText(string)
+        self.end_entry.setText(string)
 
-        # Configure column and row weights
-        scrollable_frame.grid_columnconfigure(0, weight=1)
-        scrollable_frame.grid_columnconfigure(1, weight=1)
-        scrollable_frame.grid_columnconfigure(2, weight=1)
-        scrollable_frame.grid_columnconfigure(3, weight=1)
-        scrollable_frame.grid_columnconfigure(4, weight=1)
-        scrollable_frame.grid_rowconfigure(3, weight=1)
-        scrollable_frame.grid_rowconfigure(4, weight=1)
+    @pyqtSlot(float, float)
+    def update_start_entry(self, lat, lng):
+        self.start_entry.setText(f"{lat}, {lng}")
 
-    def set_marker(self, coords):
-        if not self.start_marker:
-            self.start_marker = self.map_widget.set_marker(coords[0], coords[1], text="Start")
-            self.start_var.set(f"{coords[0]}, {coords[1]}")
-        elif not self.end_marker:
-            self.end_marker = self.map_widget.set_marker(coords[0], coords[1], text="End")
-            self.end_var.set(f"{coords[0]}, {coords[1]}")
-        else:
-            messagebox.showinfo("Markers Set", "Both start and end markers have been set. Please generate the route.")
+    @pyqtSlot(float, float)
+    def update_end_entry(self, lat, lng):
+        self.end_entry.setText(f"{lat}, {lng}")
 
-    def update_inputs(self):
-        mode = self.mode_var.get()
+    def update_inputs(self, mode):
+        self.mode_var = mode
         if mode == 'mrt':
-            self.start_entry.grid_remove()
-            self.end_entry.grid_remove()
-            self.start_dropdown.grid()
-            self.end_dropdown.grid()
-            self.map_widget.grid_remove()
-            self.start_var.set('')
-            self.end_var.set('')
-            self.clear_markers()
+            self.start_entry.setVisible(False)
+            self.end_entry.setVisible(False)
+            self.start_dropdown.setVisible(True)
+            self.end_dropdown.setVisible(True)
+            self.map_view.setVisible(False)
         else:
-            self.start_entry.grid_remove()
-            self.end_entry.grid_remove()
-            self.start_dropdown.grid_remove()
-            self.end_dropdown.grid_remove()
-            self.map_widget.grid()
-            self.clear_markers()
-            self.start_var.set('')
-            self.end_var.set('')
+            self.start_entry.setVisible(True)
+            self.end_entry.setVisible(True)
+            self.start_dropdown.setVisible(False)
+            self.end_dropdown.setVisible(False)
+            self.map_view.setVisible(True)
 
-    def clear_markers(self):
-        if self.start_marker or self.end_marker:
-            self.map_widget.delete_all_marker()
-            self.start_marker = None
-            self.end_marker = None
+
 
     def run_script(self):
-        mode = self.mode_var.get()
-        start = self.start_var.get()
-        end = self.end_var.get()
+        mode = self.mode_var
+        start = self.start_entry.text() if mode != 'mrt' else self.start_dropdown.currentText()
+        end = self.end_entry.text() if mode != 'mrt' else self.end_dropdown.currentText()
 
         if mode == 'mrt':
             if not start or not end:
-                messagebox.showerror("Input Error", "Please select valid MRT stations.")
+                QMessageBox.critical(self, "Input Error", "Please select valid MRT stations.")
                 return
             script = 'mrt_pathfinder_with_alt.py'
             args = [script, start, end]
         else:
             if not start or not end:
-                messagebox.showerror("Input Error", "Please set valid start and end points on the map.")
+                QMessageBox.critical(self, "Input Error", "Please set valid start and end points on the map.")
                 return
             script = 'drive_bike_walk_pathfinder.py' if mode in ['car', 'bike', 'walking'] else 'multi_transport_pathfinder.py'
             start_coords = start.split(',')
@@ -156,19 +388,59 @@ class RoutePlannerApp:
             result = subprocess.run(['python'] + args, check=True, capture_output=True, text=True)
             output = result.stdout.strip().split('\n')
             if not output:
-                messagebox.showerror("Execution Error", "No output file generated.")
+                QMessageBox.critical(self, "Execution Error", "No output file generated.")
                 return
+            
+            filtered_output = self.filter_files_by_mode(output, mode) # Display relevant files for selected transport mode
+            self.display_routes(filtered_output) # Display generated routes
+            
+            # if html exists do the load here
+            # self.route.load_map("DSA_Proj/singapore_driving_route.html")
 
+
+            # old route text code
             # Display routes in the textbox
-            self.route_text.delete(1.0, tk.END)
-            for line in output:
-                self.route_text.insert(tk.END, line + "\n")
-                if line.endswith('.html'):
-                    webbrowser.open(line)
+            # self.route_text.clear()
+            # for line in output:
+            #     self.route_text.append(line)
+            #     if line.endswith('.html'):
+            #         self.display_html(line)
         except subprocess.CalledProcessError as e:
-            messagebox.showerror("Execution Error", f"An error occurred while running the script:\n{e.stderr}")
+            QMessageBox.critical(self, "Execution Error", f"An error occurred while running the script:\n{e.stderr}")
+
+    def display_html(self, html_file):
+        self.map_view.setUrl(QUrl.fromLocalFile(html_file))
+        self.map_view.setVisible(True)
+    
+    def filter_files_by_mode(self, files, mode):
+        mode_prefix = {
+            'car': 'drive',
+            'bike': 'bike',
+            'walking': 'walk'
+        }.get(mode, '')
+
+        return [f for f in files if f.startswith(mode_prefix) and f.endswith('.html')]
+
+    def display_routes(self, route_files):
+        # Clear existing layout
+        layout = self.route.centralWidget().layout()
+        for i in reversed(range(layout.count())):
+            widget = layout.itemAt(i).widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        # Add web views for each route file
+        for route_file in route_files:
+            if route_file.endswith('.html'):
+                web_view = QWebEngineView()
+                web_view.setUrl(QUrl.fromLocalFile(os.path.abspath(route_file)))
+                layout.addWidget(web_view)
+
+        self.route.map_label.setText(f"Generated Routes: {', '.join(os.path.basename(f) for f in route_files if f.endswith('.html'))}")
+
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = RoutePlannerApp(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    window = RoutePlannerApp()
+    window.show()
+    sys.exit(app.exec_())
