@@ -188,19 +188,22 @@ map_1 = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
 map_2 = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
 map_3 = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
 
-# Add markers to MRT stations
-for idx, row in mrt_stations.iterrows():
-    folium.Marker(location=[row['Latitude'], row['Longitude']], popup=row['STN_NAME']).add_to(map_1)
-    folium.Marker(location=[row['Latitude'], row['Longitude']], popup=row['STN_NAME']).add_to(map_2)
-    folium.Marker(location=[row['Latitude'], row['Longitude']], popup=row['STN_NAME']).add_to(map_3)
-
 colors = ['red', 'blue', 'green'] # Colors for each route
 
 # Plot routes on the maps
-for osm_path, color, map_sg in zip(osm_paths, colors, [map_1, map_2, map_3]):
+for osm_path, color, map_sg, route in zip(osm_paths, colors, [map_1, map_2, map_3], k_shortest_paths):
     if osm_path:
         path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in osm_path]
         folium.PolyLine(locations=path_coords, color=color, weight=5, tooltip=f'Path {colors.index(color) + 1}').add_to(map_sg)
+        # Add markers to the MRT stations along the plotted route
+        for station in route:
+            row = mrt_stations[mrt_stations['STN_NAME'] == station].iloc[0]
+            if station == start_station:
+                folium.Marker(location=[row['Latitude'], row['Longitude']], popup=row['STN_NAME'], icon=folium.Icon(color='green')).add_to(map_sg)
+            elif station == end_station:
+                folium.Marker(location=[row['Latitude'], row['Longitude']], popup=row['STN_NAME'], icon=folium.Icon(color='red')).add_to(map_sg)
+            else:
+                folium.Marker(location=[row['Latitude'], row['Longitude']], popup=row['STN_NAME']).add_to(map_sg)
 
 # Save and display the maps
 map_1.save('mrt_route_1.html')
