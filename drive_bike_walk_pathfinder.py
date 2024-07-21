@@ -4,42 +4,6 @@ import heapq
 import random
 import sys
 
-# Dijkstra's Algorithm Function
-def dijkstra(graph, start, end, penalties=None):
-    if penalties is None:
-        penalties = {}
-    queue = [(0, start)]
-    distances = {node: float('infinity') for node in graph.nodes}
-    previous_nodes = {node: None for node in graph.nodes}
-    distances[start] = 0
-
-    while queue:
-        current_distance, current_node = heapq.heappop(queue)
-
-        if current_node == end:
-            path = []
-            while previous_nodes[current_node] is not None:
-                path.append(current_node)
-                current_node = previous_nodes[current_node]
-            path.append(start)
-            return path[::-1], distances[end]
-
-        if current_distance > distances[current_node]:
-            continue
-
-        for neighbor in graph.neighbors(current_node):
-            weight = graph.edges[current_node, neighbor, 0].get('length', 1)
-            if (current_node, neighbor) in penalties:
-                weight += penalties[(current_node, neighbor)]
-            distance = current_distance + weight
-
-            if distance < distances[neighbor]:
-                distances[neighbor] = distance
-                previous_nodes[neighbor] = current_node
-                heapq.heappush(queue, (distance, neighbor))
-
-    return [], float('infinity')
-
 # A* Algorithm Function
 def heuristic(graph, node1, node2):
     x1, y1 = graph.nodes[node1]['x'], graph.nodes[node1]['y']
@@ -91,7 +55,7 @@ def greedy_tsp(graph, nodes):
         last_node = tsp_path[-1]
         if last_node == end_node:
             break
-        next_node = min(unvisited, key=lambda node: dijkstra(graph, last_node, node)[1])
+        next_node = min(unvisited, key=lambda node: a_star(graph, last_node, node)[1])
         tsp_path.append(next_node)
         unvisited.remove(next_node)
 
@@ -103,7 +67,7 @@ def greedy_tsp(graph, nodes):
 def calculate_total_distance(graph, path):
     total_distance = 0
     for i in range(len(path) - 1):
-        _, distance = dijkstra(graph, path[i], path[i + 1])
+        _, distance = a_star(graph, path[i], path[i + 1])
         total_distance += distance
     return total_distance
 
@@ -144,7 +108,7 @@ def apply_penalties_to_graph(graph, path, penalty_value):
 def calculate_full_tsp_route(graph, tsp_path, penalties=None):
     full_path = []
     for i in range(len(tsp_path) - 1):
-        segment_path, _ = dijkstra(graph, tsp_path[i], tsp_path[i + 1], penalties=penalties)
+        segment_path, _ = a_star(graph, tsp_path[i], tsp_path[i + 1], penalties=penalties)
         full_path.extend(segment_path[:-1])
     full_path.append(tsp_path[-1])
     return full_path
