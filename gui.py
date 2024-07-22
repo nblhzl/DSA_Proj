@@ -10,6 +10,7 @@ import folium
 
 import pandas as pd
 import subprocess
+import requests
 
 class EmbedMap(QMainWindow):
     def __init__(self, map_path=None):
@@ -29,7 +30,6 @@ class EmbedMap(QMainWindow):
         self.map_label = QLabel("Generated Map: ")
         layout.addWidget(self.map_label)
 
-
         # Set up the web view
         self.web_view = QWebEngineView()
         self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
@@ -42,9 +42,9 @@ class EmbedMap(QMainWindow):
             self.map_file = os.path.basename(self.map_path)
             self.map_label.setText("Generated Map: " + self.map_file)
 
+
 class MapManager(QObject):
     # manage map clicks, marker dragged etc
-
     clicked = pyqtSignal(float, float)
     marker_dragged = pyqtSignal(str, float, float)
 
@@ -55,6 +55,7 @@ class MapManager(QObject):
             self.clicked.emit(data["lat"], data["lng"])
         elif message == "dragend":
             self.marker_dragged.emit(data["type"], data["lat"], data["lng"])
+
 
 class MapView(QMainWindow):
     # signal to update other class
@@ -75,7 +76,6 @@ class MapView(QMainWindow):
 
         # location of map.html to pick start and end coords
         self.map_path = os.path.abspath("./map.html")
-
 
         # Save map as HTML
         self.save_map()
@@ -112,7 +112,6 @@ class MapView(QMainWindow):
         # layout.addWidget(self.end_coord_label)
         layout.addWidget(self.clear_button)
 
-        
         map_manager.clicked.connect(self.handle_click)
         map_manager.marker_dragged.connect(self.handle_marker_dragged)
 
@@ -200,7 +199,6 @@ class MapView(QMainWindow):
         # self.start_coord_label.setText("Start Coordinates: None")
         # self.end_coord_label.setText("End Coordinates: None")
         
-
     def save_map(self):
         map_html = self.map.get_root().render()
         custom_js = """
@@ -292,7 +290,7 @@ class RoutePlannerApp(QMainWindow):
 
         main_layout.addLayout(mode_layout)
 
-        # Start and end points input
+        # Start and end coordinates input
         start_layout = QHBoxLayout()
         start_label = QLabel("Start Point:")
         self.start_entry = QLineEdit()
@@ -315,6 +313,21 @@ class RoutePlannerApp(QMainWindow):
         end_layout.addWidget(self.end_dropdown)
         main_layout.addLayout(end_layout)
 
+        # Address/Postal code inputs
+        start_postal_layout = QHBoxLayout()
+        start_postal_label = QLabel("Start Address/Postal Code:")
+        self.start_postal_entry = QLineEdit()
+        start_postal_layout.addWidget(start_postal_label)
+        start_postal_layout.addWidget(self.start_postal_entry)
+        main_layout.addLayout(start_postal_layout)
+
+        end_postal_layout = QHBoxLayout()
+        end_postal_label = QLabel("End Address/Postal Code:")
+        self.end_postal_entry = QLineEdit()
+        end_postal_layout.addWidget(end_postal_label)
+        end_postal_layout.addWidget(self.end_postal_entry)
+        main_layout.addLayout(end_postal_layout)
+
         # Map view for setting start and end points
         self.map_view = MapView()
         main_layout.addWidget(self.map_view)
@@ -336,6 +349,7 @@ class RoutePlannerApp(QMainWindow):
         run_button.clicked.connect(self.run_script)
         main_layout.addWidget(run_button)
         main_widget.setLayout(main_layout)
+
     @pyqtSlot(str)
     def clear_coords(self, string):
         self.start_entry.setText(string)
@@ -364,7 +378,33 @@ class RoutePlannerApp(QMainWindow):
             self.end_dropdown.setVisible(False)
             self.map_view.setVisible(True)
 
+    def validate_coordinates(self, coord):
+        try:
+            lat, lng = map(float, coord.split(','))
+            if -90 <= lat <= 90 and -180 <= lng <= 180:
+                return True
+            else:
+                return False
+        except ValueError:
+            return False
 
+
+    # Convert addresses or postal codes to coordinates using LocationIQ API
+    def geocode_address(self, address):
+        try: 
+            api_key = 'pk.d39a28854a05c1f9b1db56b54ebb6096' # API key from Location IQ
+            api_url = f"https://us1.locationiq.com/v1/search.php?key={api_key}&q={address}&country=SG&format=json"
+            response = requests.get(api_url)
+            response.raise_for_status()  # Raise an exception for HTTP errors
+            data = response.json()
+            if data:
+                location = data[0]
+                return location['lat'], location['lon']
+            else:
+                raise ValueError("No results found")
+        except requests.RequestException as e:
+            QMessageBox.critical(self, "Geocoding Error", f"Error occurred while geocoding address/postal code: {address}\n{e}")
+            return None, None
 
     def run_script(self):
         mode = self.mode_var
@@ -379,8 +419,26 @@ class RoutePlannerApp(QMainWindow):
             args = [script, start, end]
         else:
             if not start or not end:
-                QMessageBox.critical(self, "Input Error", "Please set valid start and end points on the map.")
-                return
+                if self.start_postal_entry.text() and self.end_postal_entry.text():
+                    start_lat, start_lng = self.geocode_address(self.start_postal_entry.text())
+                    end_lat, end_lng = self.geocode_address(self.end_postal_entry.text())
+                    if start_lat and end_lat:
+                        start = f"{start_lat}, {start_lng}"
+                        end = f"{end_lat}, {end_lng}"
+                    else:
+                        QMessageBox.critical(self, "Input Error", "Unable to geocode addresses/postal codes.")
+                        return
+                else:
+                    QMessageBox.critical(self, "Input Error", "Please set valid start and end points on the map.")
+                    return
+            else:
+                if not self.validate_coordinates(start):
+                    QMessageBox.critical(self, "Input Error", "Please enter valid start coordinates in the format 'lat, lng'. Alternatively, you may mark the points on the map.")
+                    return
+                if not self.validate_coordinates(end):
+                    QMessageBox.critical(self, "Input Error", "Please enter valid end coordinates in the format 'lat, lng'. Alternatively, you may mark the points on the map.")
+                    return
+            
             script = 'drive_bike_walk_pathfinder.py' if mode in ['car', 'bike', 'walking'] else 'multi_transport_pathfinder.py'
             start_coords = start.split(',')
             end_coords = end.split(',')
@@ -396,17 +454,6 @@ class RoutePlannerApp(QMainWindow):
             filtered_output = self.filter_files_by_mode(output, mode) # Display relevant files for selected transport mode
             self.display_routes(filtered_output) # Display generated routes
             
-            # if html exists do the load here
-            # self.route.load_map("DSA_Proj/singapore_driving_route.html")
-
-
-            # old route text code
-            # Display routes in the textbox
-            # self.route_text.clear()
-            # for line in output:
-            #     self.route_text.append(line)
-            #     if line.endswith('.html'):
-            #         self.display_html(line)
         except subprocess.CalledProcessError as e:
             QMessageBox.critical(self, "Execution Error", f"An error occurred while running the script:\n{e.stderr}")
 
