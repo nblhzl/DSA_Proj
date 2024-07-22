@@ -345,13 +345,21 @@ class RoutePlannerApp(QMainWindow):
             args = [script, start_coords[0].strip(), start_coords[1].strip(), end_coords[0].strip(), end_coords[1].strip()]
 
         try:
-            result = subprocess.run(['python'] + args, check=True, capture_output=True, text=True)
+            result = subprocess.run([sys.executable] + args, check=True, capture_output=True, text=True)
             output = result.stdout.strip().split('\n')
             if not output:
                 QMessageBox.critical(self, "Execution Error", "No output file generated.")
                 return
             
             emissions_output = [line for line in output if 'Emissions:' in line]
+            if mode in ['car', 'bike', 'walking']:
+                # if mode is car bike or walk need to handle emission output string
+                emissions_output = [item for item in emissions_output if mode in item.lower()]
+
+            if len(emissions_output) > 3:
+                # keep only last 3 items in list for shortest route then alt route 1 then alt route 2
+                emissions_output = emissions_output[-3:]
+
             self.emissions_list = [f"{float(line.split(': ')[1].replace(' gCO2', '')):.3f} gCO2" for line in emissions_output] if emissions_output else ['N/A']
             filtered_output = self.filter_files_by_mode(output, mode)
             self.display_routes(filtered_output)
