@@ -251,7 +251,7 @@ class MapView(QMainWindow):
 class RoutePlannerApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Route Planner")
+        self.setWindowTitle("CommuGreen")
         self.mode_var = 'car'
         self.start_var = ''
         self.end_var = ''
