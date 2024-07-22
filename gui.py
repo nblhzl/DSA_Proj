@@ -26,7 +26,7 @@ class EmbedMap(QMainWindow):
         self.setCentralWidget(container)
 
         self.map_file = ""
-        self.map_label = QLabel("Map file: ")
+        self.map_label = QLabel("Generated Map: ")
         layout.addWidget(self.map_label)
 
 
@@ -40,7 +40,7 @@ class EmbedMap(QMainWindow):
             self.map_path = os.path.abspath(map_path)
             self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
             self.map_file = os.path.basename(self.map_path)
-            self.map_label.setText("Map file: " + self.map_file)
+            self.map_label.setText("Generated Map: " + self.map_file)
 
 class MapManager(QObject):
     # manage map clicks, marker dragged etc
@@ -266,7 +266,9 @@ class RoutePlannerApp(QMainWindow):
     def load_mrt_stations(self):
         mrt_stations_file = './MRT_Stations.csv'
         mrt_stations_df = pd.read_csv(mrt_stations_file)
-        return mrt_stations_df['STN_NAME'].tolist()
+        mrt_stations = mrt_stations_df['STN_NAME'].tolist()
+        mrt_stations.sort()  # Sort stations in alphabetical order
+        return mrt_stations
 
     def initUI(self):
         main_widget = QWidget()
