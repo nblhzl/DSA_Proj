@@ -292,7 +292,7 @@ class RoutePlannerApp(QMainWindow):
 
         # Start and end coordinates input
         start_layout = QHBoxLayout()
-        start_label = QLabel("Start Point:")
+        start_label = QLabel("Start Coordinate:")
         self.start_entry = QLineEdit()
         self.start_dropdown = QComboBox()
         self.start_dropdown.addItems(self.mrt_stations)
@@ -303,7 +303,7 @@ class RoutePlannerApp(QMainWindow):
         main_layout.addLayout(start_layout)
 
         end_layout = QHBoxLayout()
-        end_label = QLabel("End Point:")
+        end_label = QLabel("End Coordinate:")
         self.end_entry = QLineEdit()
         self.end_dropdown = QComboBox()
         self.end_dropdown.addItems(self.mrt_stations)
