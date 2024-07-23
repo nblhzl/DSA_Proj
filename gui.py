@@ -448,13 +448,7 @@ class RoutePlannerApp(QMainWindow):
                 QMessageBox.critical(self, "Execution Error", "No output file generated.")
                 return
             
-            emissions_output = [line for line in output if 'Carbon Emissions:' in line]
-            if mode in ['car', 'bike', 'walking']:
-                emissions_output = [item for item in emissions_output if script_mode in item.lower()]
-
-            if len(emissions_output) > 3:
-                emissions_output = emissions_output[-3:]
-            
+            emissions_output = [line for line in output if 'gCO2' in line]
             self.emissions_list = [f"{float(line.split(': ')[1].replace(' gCO2', '')):.3f} gCO2" for line in emissions_output]
             while len(self.emissions_list) < 3:
                 self.emissions_list.append('N/A')
