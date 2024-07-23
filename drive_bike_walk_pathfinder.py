@@ -6,7 +6,7 @@ import sys
 
 # A* Algorithm Function
 def heuristic(graph, node1, node2):
-    x1, y1 = graph.nodes[node1]['x'], graph.nodes[node1]['y']
+    x1, y1 = graph.nodes[node1]['x'], graph.nodes[node2]['y']
     x2, y2 = graph.nodes[node2]['x'], graph.nodes[node2]['y']
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
@@ -135,8 +135,13 @@ intermediate_nodes_count = {
 transport_modes = ['drive', 'bike', 'walk']
 
 # Input start and end coordinates from command-line arguments
-if len(sys.argv) != 5:
-    print("Usage: python drive_bike_walk_pathfinder.py <start_lat> <start_long> <end_lat> <end_long>")
+if len(sys.argv) != 6:
+    print("Usage: python drive_bike_walk_pathfinder.py <mode> <start_lat> <start_long> <end_lat> <end_long>")
+    sys.exit(1)
+
+mode = sys.argv[1]
+if mode not in transport_modes:
+    print(f"Invalid mode. Choose from {transport_modes}")
     sys.exit(1)
 
 # Emissions data in gCO2/km
@@ -146,77 +151,75 @@ emissions_data = {
     'walk': 0  
 }
 
-start_coords = (float(sys.argv[1]), float(sys.argv[2]))
-end_coords = (float(sys.argv[3]), float(sys.argv[4]))
+start_coords = (float(sys.argv[2]), float(sys.argv[3]))
+end_coords = (float(sys.argv[4]), float(sys.argv[5]))
 
-# Generate routes for each transport mode
-for mode in transport_modes:
-    graph = ox.graph_from_place("Singapore", network_type=mode, truncate_by_edge=False, simplify=False)
+# Generate routes for the specified transport mode
+graph = ox.graph_from_place("Singapore", network_type=mode, truncate_by_edge=False, simplify=False)
 
-    start_node = ox.distance.nearest_nodes(graph, X=start_coords[1], Y=start_coords[0])
-    end_node = ox.distance.nearest_nodes(graph, X=end_coords[1], Y=end_coords[0])
+start_node = ox.distance.nearest_nodes(graph, X=start_coords[1], Y=start_coords[0])
+end_node = ox.distance.nearest_nodes(graph, X=end_coords[1], Y=end_coords[0])
 
-    # Calculate original paths using A* algorithm
-    a_star_path, a_star_distance = a_star(graph, start_node, end_node)
+# Calculate original paths using A* algorithm
+a_star_path, a_star_distance = a_star(graph, start_node, end_node)
 
-    # Calculate emissions for the A* path
-    a_star_distance_km = a_star_distance / 1000  # Convert to kilometers
-    a_star_emissions = calculate_emissions(a_star_distance_km, mode)
+# Calculate emissions for the A* path
+a_star_distance_km = a_star_distance / 1000  # Convert to kilometers
+a_star_emissions = calculate_emissions(a_star_distance_km, mode)
 
-    # Print emissions
-    print(f"A* {mode.capitalize()} Route Emissions: {a_star_emissions} gCO2")
+# Print emissions
+print(f"A* {mode.capitalize()} Route Emissions: {a_star_emissions} gCO2")
 
-    # Generate random intermediate points based on transport mode
-    num_intermediate_nodes = intermediate_nodes_count[mode]
-    intermediate_nodes = random.sample(list(graph.nodes), num_intermediate_nodes)
-    tsp_nodes = [start_node] + intermediate_nodes + [end_node]
+# Generate random intermediate points based on transport mode
+num_intermediate_nodes = intermediate_nodes_count[mode]
+intermediate_nodes = random.sample(list(graph.nodes), num_intermediate_nodes)
+tsp_nodes = [start_node] + intermediate_nodes + [end_node]
 
-    # Use TSP with 2-opt to plot alternate routes
-    tsp_path = two_opt(graph, greedy_tsp(graph, tsp_nodes))
-    tsp_full_path = calculate_full_tsp_route(graph, tsp_path)
+# Use TSP with 2-opt to plot alternate routes
+tsp_path = two_opt(graph, greedy_tsp(graph, tsp_nodes))
+tsp_full_path = calculate_full_tsp_route(graph, tsp_path)
 
-    # Calculate emissions for the TSP path
-    tsp_distance_km = calculate_total_distance(graph, tsp_full_path) / 1000  # Convert to kilometers
-    tsp_emissions = calculate_emissions(tsp_distance_km, mode)
+# Calculate emissions for the TSP path
+tsp_distance_km = calculate_total_distance(graph, tsp_full_path) / 1000  # Convert to kilometers
+tsp_emissions = calculate_emissions(tsp_distance_km, mode)
 
-    # Print emissions
-    print(f"TSP {mode.capitalize()} Route Emissions: {tsp_emissions} gCO2")
+# Print emissions
+print(f"TSP {mode.capitalize()} Route Emissions: {tsp_emissions} gCO2")
 
-    # Apply Penalties
-    penalty_factor = penalty_factors.get(mode, 1.5) # if not defined then set penalty as 1.5
-    penalties = apply_penalties_to_graph(graph, tsp_full_path, penalty_factor)
+# Apply Penalties
+penalty_factor = penalty_factors.get(mode, 1.5) # if not defined then set penalty as 1.5
+penalties = apply_penalties_to_graph(graph, tsp_full_path, penalty_factor)
 
-    # Solve TSP for second route
-    tsp_path_alternate = two_opt(graph, greedy_tsp(graph, tsp_nodes))
-    tsp_full_path_alternate = calculate_full_tsp_route(graph, tsp_path_alternate, penalties=penalties)
+# Solve TSP for second route
+tsp_path_alternate = two_opt(graph, greedy_tsp(graph, tsp_nodes))
+tsp_full_path_alternate = calculate_full_tsp_route(graph, tsp_path_alternate, penalties=penalties)
 
-    # Calculate emissions for the alternate TSP path
-    alternate_tsp_distance_km = calculate_total_distance(graph, tsp_full_path_alternate) / 1000  # Convert to kilometers
-    alternate_tsp_emissions = calculate_emissions(alternate_tsp_distance_km, mode)
+# Calculate emissions for the alternate TSP path
+alternate_tsp_distance_km = calculate_total_distance(graph, tsp_full_path_alternate) / 1000  # Convert to kilometers
+alternate_tsp_emissions = calculate_emissions(alternate_tsp_distance_km, mode)
 
-    # Print emissions
-    print(f"Alternate TSP {mode.capitalize()} Route Emissions: {alternate_tsp_emissions} gCO2")
+# Print emissions
+print(f"Alternate TSP {mode.capitalize()} Route Emissions: {alternate_tsp_emissions} gCO2")
 
-    # Plot each route on separate maps
-    for idx, (path, color, label) in enumerate([
-        (a_star_path, 'red', f'A* {mode.capitalize()} Route'),
-        (tsp_full_path, 'blue', f'TSP {mode.capitalize()} Route'),
-        (tsp_full_path_alternate, 'green', f'Alternate TSP {mode.capitalize()} Route')
-    ], start=1):
-        map_sg = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
+# Plot each route on separate maps
+for idx, (path, color, label) in enumerate([
+    (a_star_path, 'red', f'A* {mode.capitalize()} Route'),
+    (tsp_full_path, 'blue', f'TSP {mode.capitalize()} Route'),
+    (tsp_full_path_alternate, 'green', f'Alternate TSP {mode.capitalize()} Route')
+], start=1):
+    map_sg = folium.Map(location=[1.3521, 103.8198], zoom_start=12)
 
-        if path:
-            path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in path]
-            folium.PolyLine(locations=path_coords, color=color, weight=5, tooltip=label).add_to(map_sg)
+    if path:
+        path_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in path]
+        folium.PolyLine(locations=path_coords, color=color, weight=5, tooltip=label).add_to(map_sg)
 
-        # Add markers for start and end points
-        folium.Marker(location=[start_coords[0], start_coords[1]], popup='Start', icon=folium.Icon(color='green')).add_to(map_sg)
-        folium.Marker(location=[end_coords[0], end_coords[1]], popup='End', icon=folium.Icon(color='red')).add_to(map_sg)
+    # Add markers for start and end points
+    folium.Marker(location=[start_coords[0], start_coords[1]], popup='Start', icon=folium.Icon(color='green')).add_to(map_sg)
+    folium.Marker(location=[end_coords[0], end_coords[1]], popup='End', icon=folium.Icon(color='red')).add_to(map_sg)
 
-        # Save the map
-        map_sg.save(f'{mode}_route_{idx}.html')
+    # Save the map
+    map_sg.save(f'{mode}_route_{idx}.html')
 
 # Print the paths to the generated maps
-for mode in transport_modes:
-    for i in range(1, 4):
-        print(f'{mode}_route_{i}.html')
+for i in range(1, 4):
+    print(f'{mode}_route_{i}.html')
