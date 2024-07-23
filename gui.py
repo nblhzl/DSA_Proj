@@ -30,12 +30,12 @@ class EmbedMap(QMainWindow):
         self.map_label = QLabel("Generated Map: ")
         layout.addWidget(self.map_label)
 
-        self.emissions_label = QLabel("Carbon Emissions: ")
+        self.emissions_label = QLabel("Emissions: ")
         layout.addWidget(self.emissions_label)
 
         # Set up the web view
         self.web_view = QWebEngineView()
-        self.web_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding) # Ensures embedded maps are consistently big
+        self.web_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding) # Ensures embedded maps are consistently big enough
         self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
         layout.addWidget(self.web_view)
     
@@ -47,7 +47,7 @@ class EmbedMap(QMainWindow):
             self.map_label.setText("Generated Map: " + self.map_file)
 
     def update_emissions(self, emissions):
-        self.emissions_label.setText(f"Carbon Emissions: {emissions}")
+        self.emissions_label.setText(f"Emissions: {emissions}")
 
 class MapManager(QObject):
     # manage map clicks, marker dragged etc
@@ -467,7 +467,7 @@ class RoutePlannerApp(QMainWindow):
                 QMessageBox.critical(self, "Execution Error", "No output file generated.")
                 return
             
-            emissions_output = [line for line in output if 'Carbon Emissions:' in line]
+            emissions_output = [line for line in output if 'Emissions:' in line]
             if mode in ['car', 'bike', 'walking']:
                 # if mode is car bike or walk need to handle emission output string
                 emissions_output = [item for item in emissions_output if mode in item.lower()]
