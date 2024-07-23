@@ -2,7 +2,7 @@ import os
 import sys
 import json
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QRadioButton, QLineEdit, QComboBox, QPushButton, QTextEdit, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QRadioButton, QLineEdit, QComboBox, QPushButton, QTextEdit, QMessageBox, QSizePolicy
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import QUrl, pyqtSignal, QObject, pyqtSlot
 from PyQt5.QtWebChannel import QWebChannel
@@ -30,8 +30,12 @@ class EmbedMap(QMainWindow):
         self.map_label = QLabel("Generated Map: ")
         layout.addWidget(self.map_label)
 
+        self.emissions_label = QLabel("Carbon Emissions: ")
+        layout.addWidget(self.emissions_label)
+
         # Set up the web view
         self.web_view = QWebEngineView()
+        self.web_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding) # Ensures embedded maps are consistently big
         self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
         layout.addWidget(self.web_view)
     
@@ -42,6 +46,8 @@ class EmbedMap(QMainWindow):
             self.map_file = os.path.basename(self.map_path)
             self.map_label.setText("Generated Map: " + self.map_file)
 
+    def update_emissions(self, emissions):
+        self.emissions_label.setText(f"Carbon Emissions: {emissions}")
 
 class MapManager(QObject):
     # manage map clicks, marker dragged etc
@@ -58,7 +64,6 @@ class MapManager(QObject):
 
 
 class MapView(QMainWindow):
-    # signal to update other class
     start_coordinates_changed = pyqtSignal(float, float)
     end_coordinates_changed = pyqtSignal(float, float)
     clear_button_pressed = pyqtSignal(str)
@@ -66,7 +71,6 @@ class MapView(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # Initialize map
         self.map = folium.Map(location=[1.3521, 103.8198], zoom_start=12)  # Singapore coordinates
 
         # Flags to track clicks and markers
@@ -102,14 +106,9 @@ class MapView(QMainWindow):
         self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
         layout.addWidget(self.web_view)
 
-        # Add buttons and labels for getting coordinates and clearing markers
-        # self.start_coord_label = QLabel("Start Coordinates: None")
-        # self.end_coord_label = QLabel("End Coordinates: None")
         self.clear_button = QPushButton("Clear Markers")
         self.clear_button.clicked.connect(self.clear_markers)
 
-        # layout.addWidget(self.start_coord_label)
-        # layout.addWidget(self.end_coord_label)
         layout.addWidget(self.clear_button)
 
         map_manager.clicked.connect(self.handle_click)
@@ -128,7 +127,6 @@ class MapView(QMainWindow):
             )
             self.start_marker.add_to(self.map)
             self.click_count += 1
-            # self.start_coord_label.setText(f"Start Coordinates: ({lat}, {lng})")
             self.start_coordinates_changed.emit(lat, lng)  # Emit signal
         elif self.click_count == 1:
             self.end_marker = folium.Marker(
@@ -139,7 +137,6 @@ class MapView(QMainWindow):
             )
             self.end_marker.add_to(self.map)
             self.click_count += 1
-            # self.end_coord_label.setText(f"End Coordinates: ({lat}, {lng})")
             self.end_coordinates_changed.emit(lat, lng)  # Emit signal
 
         self.save_map()
@@ -159,20 +156,15 @@ class MapView(QMainWindow):
         
     def handle_marker_dragged(self, marker_type, lat, lng):
         if marker_type == "start":
-            # self.start_coord_label.setText(f"Start Coordinates: ({lat}, {lng})")
             self.start_marker.location = [lat, lng]
             self.start_coordinates_changed.emit(lat, lng)  # Emit signal
         elif marker_type == "end":
-            # self.end_coord_label.setText(f"End Coordinates: ({lat}, {lng})")
             self.end_marker.location = [lat, lng]
             self.end_coordinates_changed.emit(lat, lng)  # Emit signal
 
-        # self.update_map()
         self.save_map()
-        # self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
 
     def update_map(self):
-        # self.map = folium.Map(location=[1.3521, 103.8198], zoom_start=12)  # Reset the map
         if self.start_marker:
             folium.Marker(
                 location=self.start_marker.location,
@@ -196,8 +188,6 @@ class MapView(QMainWindow):
         self.save_map()
         self.web_view.setUrl(QUrl.fromLocalFile(self.map_path))
         self.clear_button_pressed.emit("")
-        # self.start_coord_label.setText("Start Coordinates: None")
-        # self.end_coord_label.setText("End Coordinates: None")
         
     def save_map(self):
         map_html = self.map.get_root().render()
@@ -255,10 +245,7 @@ class RoutePlannerApp(QMainWindow):
         self.mode_var = 'car'
         self.start_var = ''
         self.end_var = ''
-
-        # Load MRT stations
-        self.mrt_stations = self.load_mrt_stations()
-
+        self.mrt_stations = self.load_mrt_stations() # Load MRT stations
         self.initUI()
 
     def load_mrt_stations(self):
@@ -287,44 +274,43 @@ class RoutePlannerApp(QMainWindow):
             mode_layout.addWidget(mode_button)
             self.mode_buttons[mode.lower()] = mode_button
             
-
         main_layout.addLayout(mode_layout)
 
         # Start and end coordinates input
         start_layout = QHBoxLayout()
-        start_label = QLabel("Start Coordinate:")
+        self.start_label = QLabel("Start Coordinate:")
         self.start_entry = QLineEdit()
         self.start_dropdown = QComboBox()
         self.start_dropdown.addItems(self.mrt_stations)
         self.start_dropdown.setVisible(False)
-        start_layout.addWidget(start_label)
+        start_layout.addWidget(self.start_label)
         start_layout.addWidget(self.start_entry)
         start_layout.addWidget(self.start_dropdown)
         main_layout.addLayout(start_layout)
 
         end_layout = QHBoxLayout()
-        end_label = QLabel("End Coordinate:")
+        self.end_label = QLabel("End Coordinate:")
         self.end_entry = QLineEdit()
         self.end_dropdown = QComboBox()
         self.end_dropdown.addItems(self.mrt_stations)
         self.end_dropdown.setVisible(False)
-        end_layout.addWidget(end_label)
+        end_layout.addWidget(self.end_label)
         end_layout.addWidget(self.end_entry)
         end_layout.addWidget(self.end_dropdown)
         main_layout.addLayout(end_layout)
 
         # Address/Postal code inputs
         start_postal_layout = QHBoxLayout()
-        start_postal_label = QLabel("Start Address/Postal Code:")
+        self.start_postal_label = QLabel("Start Address/Postal Code:")
         self.start_postal_entry = QLineEdit()
-        start_postal_layout.addWidget(start_postal_label)
+        start_postal_layout.addWidget(self.start_postal_label)
         start_postal_layout.addWidget(self.start_postal_entry)
         main_layout.addLayout(start_postal_layout)
 
         end_postal_layout = QHBoxLayout()
-        end_postal_label = QLabel("End Address/Postal Code:")
+        self.end_postal_label = QLabel("End Address/Postal Code:")
         self.end_postal_entry = QLineEdit()
-        end_postal_layout.addWidget(end_postal_label)
+        end_postal_layout.addWidget(self.end_postal_label)
         end_postal_layout.addWidget(self.end_postal_entry)
         main_layout.addLayout(end_postal_layout)
 
@@ -335,14 +321,27 @@ class RoutePlannerApp(QMainWindow):
         self.map_view.end_coordinates_changed.connect(self.update_end_entry)
         self.map_view.clear_button_pressed.connect(self.clear_coords)
 
-        # Route display textbox
-        # self.route_text = QTextEdit()
-        # main_layout.addWidget(self.route_text)
-
-        # Route html embed
         self.route = EmbedMap()
         main_layout.addWidget(self.route)
-        # self.route.load_map("./singapore_driving_route.html")
+
+        # Different Route tabs
+        self.button_layout = QHBoxLayout()
+        self.shortest_route_button = QPushButton("Shortest Route")
+        self.alternate_route1_button = QPushButton("Alternate Route 1")
+        self.alternate_route2_button = QPushButton("Alternate Route 2")
+
+        self.shortest_route_button.clicked.connect(lambda: self.change_route(0))
+        self.alternate_route1_button.clicked.connect(lambda: self.change_route(1))
+        self.alternate_route2_button.clicked.connect(lambda: self.change_route(2))
+
+        self.button_layout.addWidget(self.shortest_route_button)
+        self.button_layout.addWidget(self.alternate_route1_button)
+        self.button_layout.addWidget(self.alternate_route2_button)
+        self.button_layout_widget = QWidget()
+        self.button_layout_widget.setLayout(self.button_layout)
+        main_layout.addWidget(self.button_layout_widget)
+
+        self.button_layout_widget.hide()  
 
         # Run button
         run_button = QPushButton("Generate Route")
@@ -366,17 +365,35 @@ class RoutePlannerApp(QMainWindow):
     def update_inputs(self, mode):
         self.mode_var = mode
         if mode == 'mrt':
+            # Hide coordinate entries
             self.start_entry.setVisible(False)
             self.end_entry.setVisible(False)
             self.start_dropdown.setVisible(True)
             self.end_dropdown.setVisible(True)
             self.map_view.setVisible(False)
+            # Hide postal code entries
+            self.start_postal_label.setVisible(False)
+            self.start_postal_entry.setVisible(False)
+            self.end_postal_label.setVisible(False)
+            self.end_postal_entry.setVisible(False)
+            # Change labels for MRT mode
+            self.start_label.setText("Start MRT Station:")
+            self.end_label.setText("End MRT Station:")
         else:
+            # Show coordinate entries
             self.start_entry.setVisible(True)
             self.end_entry.setVisible(True)
             self.start_dropdown.setVisible(False)
             self.end_dropdown.setVisible(False)
             self.map_view.setVisible(True)
+            # Show postal code entries
+            self.start_postal_label.setVisible(True)
+            self.start_postal_entry.setVisible(True)
+            self.end_postal_label.setVisible(True)
+            self.end_postal_entry.setVisible(True)
+            # Default labels
+            self.start_label.setText("Start Coordinate:")
+            self.end_label.setText("End Coordinate:")
 
     def validate_coordinates(self, coord):
         try:
@@ -387,7 +404,6 @@ class RoutePlannerApp(QMainWindow):
                 return False
         except ValueError:
             return False
-
 
     # Convert addresses or postal codes to coordinates using LocationIQ API
     def geocode_address(self, address):
@@ -445,14 +461,30 @@ class RoutePlannerApp(QMainWindow):
             args = [script, start_coords[0].strip(), start_coords[1].strip(), end_coords[0].strip(), end_coords[1].strip()]
 
         try:
-            result = subprocess.run(['python'] + args, check=True, capture_output=True, text=True)
+            result = subprocess.run([sys.executable] + args, check=True, capture_output=True, text=True)
             output = result.stdout.strip().split('\n')
             if not output:
                 QMessageBox.critical(self, "Execution Error", "No output file generated.")
                 return
             
+            emissions_output = [line for line in output if 'Carbon Emissions:' in line]
+            if mode in ['car', 'bike', 'walking']:
+                # if mode is car bike or walk need to handle emission output string
+                emissions_output = [item for item in emissions_output if mode in item.lower()]
+
+            if len(emissions_output) > 3:
+                # keep only last 3 items in list for shortest route then alt route 1 then alt route 2
+                emissions_output = emissions_output[-3:]
+            
+            self.emissions_list = [f"{float(line.split(': ')[1].replace(' gCO2', '')):.3f} gCO2" for line in emissions_output] if emissions_output else ['N/A']
+
             filtered_output = self.filter_files_by_mode(output, mode) # Display relevant files for selected transport mode
             self.display_routes(filtered_output) # Display generated routes
+
+            # Hide the map view and show the generated map route
+            self.map_view.setVisible(False)
+            self.route.setVisible(True)
+            self.resize(800, 600)
             
         except subprocess.CalledProcessError as e:
             QMessageBox.critical(self, "Execution Error", f"An error occurred while running the script:\n{e.stderr}")
@@ -471,27 +503,17 @@ class RoutePlannerApp(QMainWindow):
         return [f for f in files if f.startswith(mode_prefix) and f.endswith('.html')]
 
     def display_routes(self, route_files):
-        # Clear existing layout
-        layout = self.route.centralWidget().layout()
-        for i in reversed(range(layout.count())):
-            widget = layout.itemAt(i).widget()
-            if widget is not None:
-                widget.deleteLater()
+        self.route_files = route_files
 
-        route_files.sort()
+        if route_files:
+            self.route.load_map(route_files[0])  # Display first route by default
+            self.route.update_emissions(self.emissions_list[0])  
+            self.button_layout_widget.show()  
 
-        # Add labels and web views for each route file
-        route_labels = ["Shortest Route:", "Alternate Route 1:", "Alternate Route 2:"]
-        for idx, route_file in enumerate(route_files):
-            if route_file.endswith('.html') and idx < len(route_labels):
-                route_label = QLabel(route_labels[idx])
-                web_view = QWebEngineView()
-                web_view.setUrl(QUrl.fromLocalFile(os.path.abspath(route_file)))
-                layout.addWidget(route_label)
-                layout.addWidget(web_view)
-
-        self.route.map_label.setText(f"Generated Routes: {', '.join(os.path.basename(f) for f in route_files if f.endswith('.html'))}")
-
+    def change_route(self, index):
+        if 0 <= index < len(self.route_files):
+            self.route.load_map(self.route_files[index])
+            self.route.update_emissions(self.emissions_list[index])  
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

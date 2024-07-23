@@ -4,6 +4,7 @@ import osmnx as ox
 import folium
 import heapq
 import sys
+from geopy.distance import geodesic
 
 # Load the MRT stations and edges CSV files
 stations_file_path = './MRT_Stations.csv'
@@ -28,8 +29,20 @@ if len(sys.argv) != 5:
     print("Usage: python multi_transport_pathfinder.py <start_lat> <start_long> <end_lat> <end_long>")
     sys.exit(1)
 
+# Emissions data in gCO2/km
+emissions_data = {
+    'car': 170,
+    'bike': 0,  # Assuming negligible emissions
+    'walk': 0,  # Assuming negligible emissions
+    'mrt': 35  # Assuming 35 gCO2/km for MRT
+}
+
 start_coords = (float(sys.argv[1]), float(sys.argv[2]))
 end_coords = (float(sys.argv[3]), float(sys.argv[4]))
+
+# Function to calculate emissions based on distance
+def calculate_emissions(distance_km, mode):
+    return distance_km * emissions_data.get(mode, 0)
 
 # Generalized A* Algorithm Function
 def heuristic(graph, node1, node2, coord_attr='pos'):
@@ -108,6 +121,19 @@ def compute_heuristic_distance(start_coords, end_coords, start_station, end_stat
     station_to_end = ox.distance.euclidean(end_coords[0], end_coords[1], end_station_coords[0], end_station_coords[1])
     return start_to_station + station_to_end
 
+# Function to calculate the total distance of a path
+def calculate_total_distance(graph, path, is_osm=False):
+    total_distance = 0
+    for i in range(len(path) - 1):
+        if is_osm:
+            distance = graph.edges[path[i], path[i + 1], 0].get('length', 1)
+        else:
+            node1_pos = graph.nodes[path[i]]['pos']
+            node2_pos = graph.nodes[path[i + 1]]['pos']
+            distance = geodesic((node1_pos[1], node1_pos[0]), (node2_pos[1], node2_pos[0])).meters
+        total_distance += distance
+    return total_distance
+
 # Generate combinations and their heuristic distances
 combinations = []
 for start_station in nearest_start_stations:
@@ -135,6 +161,12 @@ for start_station, end_station, _ in top_combinations:
 # Print all paths found
 for i, path in enumerate(a_star_paths):
     print(f"A* MRT path {i+1}:", path)
+
+# Calculate distance and emissions for the MRT paths
+for i, path in enumerate(a_star_paths):
+    distance_km = calculate_total_distance(G, path) / 1000  # Convert to kilometers
+    emissions = calculate_emissions(distance_km, 'mrt')
+    print(f"A* MRT Route {i+1} Emissions: {emissions} gCO2")
 
 # Convert MRT shortest paths to OSM shortest paths for plotting
 def convert_to_osm_path(shortest_path):

@@ -4,6 +4,7 @@ import osmnx as ox
 import folium
 import heapq
 import sys
+from geopy.distance import geodesic
 
 # Load the MRT stations and edges CSV files
 stations_file_path = './MRT_Stations.csv'
@@ -30,6 +31,11 @@ if len(sys.argv) != 3:
 
 start_station = sys.argv[1]
 end_station = sys.argv[2]
+
+# Emissions data in gCO2/km
+emissions_data = {
+    'mrt': 35  # Assuming 35 gCO2/km for MRT
+}
 
 # Generalized A* Algorithm
 def heuristic(graph, node1, node2, is_osm=False):
@@ -74,11 +80,22 @@ def a_star(graph, start, end, is_osm=False):
 
     return []
 
-# Use the generalized A* function to find the shortest path in MRT network
-a_star_shortest_path = a_star(G, start_station, end_station)
-if not a_star_shortest_path:
-    print(f"No path found between {start_station} and {end_station}")
-    sys.exit(1)
+# Function to calculate emissions based on distance
+def calculate_emissions(distance_km, mode):
+    return distance_km * emissions_data.get(mode, 0)
+
+# Function to calculate the total distance of a path
+def calculate_total_distance(graph, path, is_osm=False):
+    total_distance = 0
+    for i in range(len(path) - 1):
+        if is_osm:
+            distance = graph.edges[path[i], path[i + 1], 0].get('length', 1)
+        else:
+            node1_pos = graph.nodes[path[i]]['pos']
+            node2_pos = graph.nodes[path[i + 1]]['pos']
+            distance = geodesic((node1_pos[1], node1_pos[0]), (node2_pos[1], node2_pos[0])).meters
+        total_distance += distance
+    return total_distance
 
 # K-Shortest Paths Algorithm
 def yen_k_shortest_paths(graph, start, end, k=2):
@@ -153,8 +170,25 @@ def yen_k_shortest_paths(graph, start, end, k=2):
 
     return paths
 
+# Use the generalized A* function to find the shortest path in MRT network
+a_star_shortest_path = a_star(G, start_station, end_station)
+if not a_star_shortest_path:
+    print(f"No path found between {start_station} and {end_station}")
+    sys.exit(1)
+
+# Calculate distance and emissions for the shortest path
+shortest_distance_km = calculate_total_distance(G, a_star_shortest_path) / 1000  # Convert to kilometers
+shortest_emissions = calculate_emissions(shortest_distance_km, 'mrt')
+print(f"A* MRT Route Emissions: {shortest_emissions} gCO2")
+
 # Get 2 alternate paths
 k_shortest_paths = yen_k_shortest_paths(G, start_station, end_station, k=2)
+
+# Calculate distance and emissions for the alternate paths
+for i, path in enumerate(k_shortest_paths):
+    distance_km = calculate_total_distance(G, path) / 1000  # Convert to kilometers
+    emissions = calculate_emissions(distance_km, 'mrt')
+    print(f"Alternate {i + 1} MRT Route Emissions: {emissions} gCO2")
 
 # Download the street network for Singapore using osmnx
 place_name = "Singapore"

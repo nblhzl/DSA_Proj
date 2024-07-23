@@ -113,6 +113,10 @@ def calculate_full_tsp_route(graph, tsp_path, penalties=None):
     full_path.append(tsp_path[-1])
     return full_path
 
+# Function to calculate emissions based on distance
+def calculate_emissions(distance_km, mode):
+    return distance_km * emissions_data.get(mode, 0)
+
 # Individually define penalty for each transport mode. Increase if routes are overlapping too often
 penalty_factors = {
     'drive': 1.8,
@@ -135,6 +139,13 @@ if len(sys.argv) != 5:
     print("Usage: python drive_bike_walk_pathfinder.py <start_lat> <start_long> <end_lat> <end_long>")
     sys.exit(1)
 
+# Emissions data in gCO2/km
+emissions_data = {
+    'drive': 170,
+    'bike': 0,  
+    'walk': 0  
+}
+
 start_coords = (float(sys.argv[1]), float(sys.argv[2]))
 end_coords = (float(sys.argv[3]), float(sys.argv[4]))
 
@@ -148,6 +159,13 @@ for mode in transport_modes:
     # Calculate original paths using A* algorithm
     a_star_path, a_star_distance = a_star(graph, start_node, end_node)
 
+    # Calculate emissions for the A* path
+    a_star_distance_km = a_star_distance / 1000  # Convert to kilometers
+    a_star_emissions = calculate_emissions(a_star_distance_km, mode)
+
+    # Print emissions
+    print(f"A* {mode.capitalize()} Route Emissions: {a_star_emissions} gCO2")
+
     # Generate random intermediate points based on transport mode
     num_intermediate_nodes = intermediate_nodes_count[mode]
     intermediate_nodes = random.sample(list(graph.nodes), num_intermediate_nodes)
@@ -157,6 +175,13 @@ for mode in transport_modes:
     tsp_path = two_opt(graph, greedy_tsp(graph, tsp_nodes))
     tsp_full_path = calculate_full_tsp_route(graph, tsp_path)
 
+    # Calculate emissions for the TSP path
+    tsp_distance_km = calculate_total_distance(graph, tsp_full_path) / 1000  # Convert to kilometers
+    tsp_emissions = calculate_emissions(tsp_distance_km, mode)
+
+    # Print emissions
+    print(f"TSP {mode.capitalize()} Route Emissions: {tsp_emissions} gCO2")
+
     # Apply Penalties
     penalty_factor = penalty_factors.get(mode, 1.5) # if not defined then set penalty as 1.5
     penalties = apply_penalties_to_graph(graph, tsp_full_path, penalty_factor)
@@ -164,6 +189,13 @@ for mode in transport_modes:
     # Solve TSP for second route
     tsp_path_alternate = two_opt(graph, greedy_tsp(graph, tsp_nodes))
     tsp_full_path_alternate = calculate_full_tsp_route(graph, tsp_path_alternate, penalties=penalties)
+
+    # Calculate emissions for the alternate TSP path
+    alternate_tsp_distance_km = calculate_total_distance(graph, tsp_full_path_alternate) / 1000  # Convert to kilometers
+    alternate_tsp_emissions = calculate_emissions(alternate_tsp_distance_km, mode)
+
+    # Print emissions
+    print(f"Alternate TSP {mode.capitalize()} Route Emissions: {alternate_tsp_emissions} gCO2")
 
     # Plot each route on separate maps
     for idx, (path, color, label) in enumerate([
