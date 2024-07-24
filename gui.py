@@ -401,7 +401,11 @@ class RoutePlannerApp(QMainWindow):
     def geocode_address(self, address):
         try:
             api_key = 'pk.d39a28854a05c1f9b1db56b54ebb6096'
-            api_url = f"https://us1.locationiq.com/v1/search.php?key={api_key}&q={address}&country=SG&format=json"
+            viewbox = "103.6,1.1,104.1,1.5"
+            api_url = (
+                f"https://us1.locationiq.com/v1/search.php?key={api_key}&q={address}"
+                f"&country=SG&viewbox={viewbox}&bounded=1&format=json"
+            )
             response = requests.get(api_url)
             response.raise_for_status()
             data = response.json()
@@ -410,9 +414,20 @@ class RoutePlannerApp(QMainWindow):
                 return location['lat'], location['lon']
             else:
                 raise ValueError("No results found")
+            
+        except requests.exceptions.HTTPError as http_err:
+            if response.status_code == 404:
+                print("Invalid postal codes. Please verify again, or use street address instead.")
+            else:
+                QMessageBox.critical(self, "Geocoding Error", f"HTTP error occurred: {http_err}")
+        
         except requests.RequestException as e:
             QMessageBox.critical(self, "Geocoding Error", f"Error occurred while geocoding address/postal code: {address}\n{e}")
-            return None, None
+
+        except ValueError as e:
+            QMessageBox.warning(self, "Geocoding Error", str(e))
+
+        return None, None
         
     def handle_script_output(self, script, output):
         emissions_output = [line for line in output if 'gCO2' in line]
@@ -485,7 +500,7 @@ class RoutePlannerApp(QMainWindow):
                         start = f"{start_lat}, {start_lng}"
                         end = f"{end_lat}, {end_lng}"
                     else:
-                        QMessageBox.critical(self, "Input Error", "Unable to geocode addresses/postal codes.")
+                        QMessageBox.critical(self, "Input Error", "Invalid postal codes. Please verify again, or use street address instead.")
                         self.start_new()
                         return
                 else:
