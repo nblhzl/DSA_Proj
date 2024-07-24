@@ -6,7 +6,7 @@ import sys
 
 # A* Algorithm Function
 def heuristic(graph, node1, node2):
-    x1, y1 = graph.nodes[node1]['x'], graph.nodes[node2]['y']
+    x1, y1 = graph.nodes[node1]['x'], graph.nodes[node1]['y']
     x2, y2 = graph.nodes[node2]['x'], graph.nodes[node2]['y']
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
@@ -155,7 +155,18 @@ start_coords = (float(sys.argv[2]), float(sys.argv[3]))
 end_coords = (float(sys.argv[4]), float(sys.argv[5]))
 
 # Generate routes for the specified transport mode
-graph = ox.graph_from_place("Singapore", network_type=mode, truncate_by_edge=False, simplify=False)
+# graph = ox.graph_from_place("Singapore", network_type=mode, truncate_by_edge=False, simplify=False)
+
+# load from local file
+if mode == transport_modes[0]:
+    # drive
+    graph = ox.graph_from_xml("./singapore_drive.osm", simplify=False)
+elif mode == transport_modes[1]:
+    # bike
+    graph = ox.graph_from_xml("./singapore_bike.osm", simplify=False)
+elif mode == transport_modes[2]:
+    # walk
+    graph = ox.graph_from_xml("./singapore_walk.osm", simplify=False)
 
 start_node = ox.distance.nearest_nodes(graph, X=start_coords[1], Y=start_coords[0])
 end_node = ox.distance.nearest_nodes(graph, X=end_coords[1], Y=end_coords[0])

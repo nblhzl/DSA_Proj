@@ -2,15 +2,32 @@ import os
 import sys
 import json
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QRadioButton, QLineEdit, QComboBox, QPushButton, QTextEdit, QMessageBox, QSizePolicy
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QRadioButton, QLineEdit, QComboBox, QPushButton, QMessageBox, QSizePolicy
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtCore import QUrl, pyqtSignal, QObject, pyqtSlot
+from PyQt5.QtCore import QUrl, pyqtSignal, QObject, QThread, pyqtSlot
 from PyQt5.QtWebChannel import QWebChannel
 import folium
 
 import pandas as pd
 import subprocess
 import requests
+
+class ScriptRunner(QThread):
+    finished = pyqtSignal(str, list)  # Signal to emit when done
+    error = pyqtSignal(str)  # Signal to emit on error
+
+    def __init__(self, script, args):
+        super().__init__()
+        self.script = script
+        self.args = args
+
+    def run(self):
+        try:
+            result = subprocess.run([sys.executable] + self.args, check=True, capture_output=True, text=True)
+            output = result.stdout.strip().split('\n')
+            self.finished.emit(self.script, output)
+        except subprocess.CalledProcessError as e:
+            self.error.emit(f"An error occurred while running the script:\n{e.stderr}")
 
 class EmbedMap(QMainWindow):
     def __init__(self, map_path=None):
@@ -260,6 +277,8 @@ class RoutePlannerApp(QMainWindow):
         start_layout = QHBoxLayout()
         self.start_label = QLabel("Start Coordinate:")
         self.start_entry = QLineEdit()
+        self.start_entry.setReadOnly(True)
+        self.start_entry.setStyleSheet("QLineEdit { background: transparent; border: none; }")
         self.start_dropdown = QComboBox()
         self.start_dropdown.addItems(self.mrt_stations)
         self.start_dropdown.setVisible(False)
@@ -271,6 +290,8 @@ class RoutePlannerApp(QMainWindow):
         end_layout = QHBoxLayout()
         self.end_label = QLabel("End Coordinate:")
         self.end_entry = QLineEdit()
+        self.end_entry.setReadOnly(True)
+        self.end_entry.setStyleSheet("QLineEdit { background: transparent; border: none; }")
         self.end_dropdown = QComboBox()
         self.end_dropdown.addItems(self.mrt_stations)
         self.end_dropdown.setVisible(False)
@@ -320,9 +341,9 @@ class RoutePlannerApp(QMainWindow):
 
         self.button_layout_widget.hide()
 
-        run_button = QPushButton("Generate Route")
-        run_button.clicked.connect(self.run_script)
-        main_layout.addWidget(run_button)
+        self.run_button = QPushButton("Generate Route")
+        self.run_button.clicked.connect(self.run_script)
+        main_layout.addWidget(self.run_button)
         main_widget.setLayout(main_layout)
 
     @pyqtSlot(str)
@@ -390,8 +411,38 @@ class RoutePlannerApp(QMainWindow):
         except requests.RequestException as e:
             QMessageBox.critical(self, "Geocoding Error", f"Error occurred while geocoding address/postal code: {address}\n{e}")
             return None, None
+    def handle_script_output(self, script, output):
+        # Process and display the results here
+        # Example:
+        
+        emissions_output = [line for line in output if 'gCO2' in line]
+        if self.script_mode in ['drive', 'bike', 'walk']:
+            emissions_output = [item for item in emissions_output if self.script_mode in item.lower()]
+
+        if len(emissions_output) > 3:
+            emissions_output = emissions_output[-3:]
+            
+        self.emissions_list = [f"{float(line.split(': ')[1].replace(' gCO2', '')):.3f} gCO2" for line in emissions_output]
+        while len(self.emissions_list) < 3:
+            self.emissions_list.append('N/A')
+
+        filtered_output = self.filter_files_by_mode(output, self.script_mode)
+        self.display_routes(filtered_output)
+
+        self.map_view.setVisible(False)
+        self.run_button.setEnabled(True)
+        self.run_button.setText("Generate Route")
+        self.route.setVisible(True)
+        self.resize(800, 600)
+
+    def handle_script_error(self, error_message):
+        self.run_button.setEnabled(True)
+        self.run_button.setText("Generate Route")
+        QMessageBox.critical(self, "Execution Error", error_message)
 
     def run_script(self):
+        self.run_button.setEnabled(False)
+        self.run_button.setText("Generating Route...")
         mode = self.mode_var
         start = self.start_entry.text() if mode != 'mrt' else self.start_dropdown.currentText()
         end = self.end_entry.text() if mode != 'mrt' else self.end_dropdown.currentText()
@@ -402,7 +453,7 @@ class RoutePlannerApp(QMainWindow):
                 return
             script = 'mrt_pathfinder_with_alt.py'
             args = [script, start, end]
-            script_mode = 'mrt'
+            self.script_mode = 'mrt'
         else:
             if not start or not end:
                 if self.start_postal_entry.text() and self.end_postal_entry.text():
@@ -429,42 +480,45 @@ class RoutePlannerApp(QMainWindow):
                 'car': 'drive',
                 'walking': 'walk'
             }
-            script_mode = mode_mapping.get(mode, mode)
+            self.script_mode = mode_mapping.get(mode, mode)
 
             start_coords = start.split(',')
             end_coords = end.split(',')
 
-            if script_mode in ['drive', 'bike', 'walk']:
+            if self.script_mode in ['drive', 'bike', 'walk']:
                 script = 'drive_bike_walk_pathfinder.py'
-                args = [script, script_mode, start_coords[0].strip(), start_coords[1].strip(), end_coords[0].strip(), end_coords[1].strip()]
+                args = [script, self.script_mode, start_coords[0].strip(), start_coords[1].strip(), end_coords[0].strip(), end_coords[1].strip()]
             else:
                 script = 'multi_transport_pathfinder.py'
                 args = [script, start_coords[0].strip(), start_coords[1].strip(), end_coords[0].strip(), end_coords[1].strip()]
 
-        try:
-            result = subprocess.run([sys.executable] + args, check=True, capture_output=True, text=True)
-            output = result.stdout.strip().split('\n')
-            if not output:
-                QMessageBox.critical(self, "Execution Error", "No output file generated.")
-                return
-            
-            emissions_output = [line for line in output if 'gCO2' in line]
-            if len(emissions_output) > 3:
-                emissions_output = emissions_output[-3:]
+        # try:
+        
+        self.script_runner = ScriptRunner(script, args)
+        self.script_runner.finished.connect(self.handle_script_output)
+        self.script_runner.error.connect(self.handle_script_error)
+        self.script_runner.start()
+        
+            # emissions_output = [line for line in output if 'gCO2' in line]
+            # if mode in ['car', 'bike', 'walking']:
+            #     emissions_output = [item for item in emissions_output if script_mode in item.lower()]
+
+            # if len(emissions_output) > 3:
+            #     emissions_output = emissions_output[-3:]
                 
-            self.emissions_list = [f"{float(line.split(': ')[1].replace(' gCO2', '')):.3f} gCO2" for line in emissions_output]
-            while len(self.emissions_list) < 3:
-                self.emissions_list.append('N/A')
+            # self.emissions_list = [f"{float(line.split(': ')[1].replace(' gCO2', '')):.3f} gCO2" for line in emissions_output]
+            # while len(self.emissions_list) < 3:
+            #     self.emissions_list.append('N/A')
 
-            filtered_output = self.filter_files_by_mode(output, script_mode)
-            self.display_routes(filtered_output)
+            # filtered_output = self.filter_files_by_mode(output, script_mode)
+            # self.display_routes(filtered_output)
 
-            self.map_view.setVisible(False)
-            self.route.setVisible(True)
-            self.resize(800, 600)
+            # self.map_view.setVisible(False)
+            # self.route.setVisible(True)
+            # self.resize(800, 600)
             
-        except subprocess.CalledProcessError as e:
-            QMessageBox.critical(self, "Execution Error", f"An error occurred while running the script:\n{e.stderr}")
+        # except subprocess.CalledProcessError as e:
+        #     QMessageBox.critical(self, "Execution Error", f"An error occurred while running the script:\n{e.stderr}")
 
     def display_html(self, html_file):
         self.map_view.setUrl(QUrl.fromLocalFile(html_file))

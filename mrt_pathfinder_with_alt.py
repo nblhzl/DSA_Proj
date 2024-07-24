@@ -192,7 +192,10 @@ for i, path in enumerate(k_shortest_paths):
 
 # Download the street network for Singapore using osmnx
 place_name = "Singapore"
-graph = ox.graph_from_place(place_name, network_type='all', truncate_by_edge=True, simplify=True)
+# graph = ox.graph_from_place(place_name, network_type='all', truncate_by_edge=True, simplify=True)
+
+# local graph
+graph = ox.graph_from_xml("./singapore.osm", simplify=False)
 
 # Find the nearest nodes in the OSM network for each MRT station
 nearest_nodes = {}
