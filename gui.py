@@ -449,6 +449,9 @@ class RoutePlannerApp(QMainWindow):
                 return
             
             emissions_output = [line for line in output if 'gCO2' in line]
+            if len(emissions_output) > 3:
+                emissions_output = emissions_output[-3:]
+                
             self.emissions_list = [f"{float(line.split(': ')[1].replace(' gCO2', '')):.3f} gCO2" for line in emissions_output]
             while len(self.emissions_list) < 3:
                 self.emissions_list.append('N/A')
