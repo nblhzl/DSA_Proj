@@ -314,6 +314,7 @@ class RoutePlannerApp(QMainWindow):
         end_postal_layout.addWidget(self.end_postal_label)
         end_postal_layout.addWidget(self.end_postal_entry)
         main_layout.addLayout(end_postal_layout)
+        main_layout.addStretch(1)
 
         self.map_view = MapView()
         main_layout.addWidget(self.map_view)
@@ -340,8 +341,8 @@ class RoutePlannerApp(QMainWindow):
         self.button_layout_widget.setLayout(self.button_layout)
         main_layout.addWidget(self.button_layout_widget)
 
-        self.button_layout_widget.hide()
-        self.route.hide()
+        self.button_layout_widget.setVisible(False)
+        self.route.setVisible(False)
 
         self.run_button = QPushButton("Generate Route")
         self.run_button.clicked.connect(self.run_script)
@@ -380,7 +381,8 @@ class RoutePlannerApp(QMainWindow):
             self.end_entry.setVisible(True)
             self.start_dropdown.setVisible(False)
             self.end_dropdown.setVisible(False)
-            self.map_view.setVisible(True)
+            if not self.fin_run:
+                self.map_view.setVisible(True)
             self.start_postal_label.setVisible(True)
             self.start_postal_entry.setVisible(True)
             self.end_postal_label.setVisible(True)
@@ -461,10 +463,10 @@ class RoutePlannerApp(QMainWindow):
 
     def start_new(self):
         # reset to start new generate route
-            self.map_view.show()
-            self.route.hide()
+            self.map_view.setVisible(True)
+            self.route.setVisible(False)
             self.run_button.setEnabled(True)
-            self.button_layout_widget.hide()
+            self.button_layout_widget.setVisible(False)
             self.map_view.clear_markers()
             self.end_postal_entry.setText("")
             self.start_postal_entry.setText("")
