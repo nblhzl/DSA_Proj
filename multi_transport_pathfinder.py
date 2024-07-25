@@ -202,7 +202,7 @@ def plot_paths(map_obj, start_to_mrt_path, mrt_to_end_path, mrt_path, start_to_m
         start_to_mrt_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in start_to_mrt_path]
         print("Distance from Start coords to MRT station:", start_to_mrt_distance)
         if start_to_mrt_distance <= 800: # plot a walk route if distance is less than 800m
-            folium.PolyLine(locations=start_to_mrt_coords, color='green', weight=5, tooltip=f'Walking Start to MRT ({algorithm_name})').add_to(map_obj)
+            folium.PolyLine(locations=start_to_mrt_coords, color='orange', weight=5, tooltip=f'Walking Start to MRT ({algorithm_name})').add_to(map_obj)
         else:
             folium.PolyLine(locations=start_to_mrt_coords, color='purple', weight=5, tooltip=f'Biking Start to MRT ({algorithm_name})').add_to(map_obj)
 
@@ -211,7 +211,7 @@ def plot_paths(map_obj, start_to_mrt_path, mrt_to_end_path, mrt_path, start_to_m
         mrt_to_end_coords = [(graph.nodes[node]['y'], graph.nodes[node]['x']) for node in mrt_to_end_path]
         print("Distance from MRT station to end coords:", mrt_to_end_distance)
         if mrt_to_end_distance <= 800: # plot a walk route if distance is less than 800m
-            folium.PolyLine(locations=mrt_to_end_coords, color='green', weight=5, tooltip=f'Walking MRT to End ({algorithm_name})').add_to(map_obj)
+            folium.PolyLine(locations=mrt_to_end_coords, color='orange', weight=5, tooltip=f'Walking MRT to End ({algorithm_name})').add_to(map_obj)
         else:
             folium.PolyLine(locations=mrt_to_end_coords, color='purple', weight=5, tooltip=f'Biking MRT to End ({algorithm_name})').add_to(map_obj)
 
