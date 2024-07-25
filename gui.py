@@ -244,7 +244,10 @@ class RoutePlannerApp(QMainWindow):
         self.mode_var = 'car'
         self.start_var = ''
         self.end_var = ''
-        self.fin_run = False
+        self.fin_run = 0
+        # 0 is initial not running
+        # 1 is running
+        # 2 is finished
         self.mrt_stations = self.load_mrt_stations()
         self.initUI()
 
@@ -381,7 +384,7 @@ class RoutePlannerApp(QMainWindow):
             self.end_entry.setVisible(True)
             self.start_dropdown.setVisible(False)
             self.end_dropdown.setVisible(False)
-            if not self.fin_run:
+            if self.fin_run == 0:
                 self.map_view.setVisible(True)
             self.start_postal_label.setVisible(True)
             self.start_postal_entry.setVisible(True)
@@ -437,7 +440,17 @@ class RoutePlannerApp(QMainWindow):
             emissions_output = [item for item in emissions_output if self.script_mode in item.lower()]
 
         if len(emissions_output) > 3:
-            emissions_output = emissions_output[-3:]
+            # Find the first string containing "A*" for shortest route
+            first_a_star = next((s for s in emissions_output if "A*" in s), None)
+            
+            # If "A*" string is found
+            if first_a_star:
+                # Get the last two elements
+                last_two_elements = emissions_output[-2:]
+                emissions_output = [first_a_star] + last_two_elements
+            else:
+                # If no "A*" string is found, just take the last three elements
+                emissions_output = emissions_output[-3:]
             
         self.emissions_list = [f"{float(line.split(': ')[1].replace(' gCO2', '')):.3f} gCO2" for line in emissions_output]
         while len(self.emissions_list) < 3:
@@ -446,7 +459,7 @@ class RoutePlannerApp(QMainWindow):
         filtered_output = self.filter_files_by_mode(output, self.script_mode)
         self.display_routes(filtered_output)
 
-        self.fin_run = True
+        self.fin_run = 2
         self.map_view.setVisible(False)
         self.run_button.setEnabled(True)
         self.run_button.setText("Start New Route")
@@ -456,7 +469,7 @@ class RoutePlannerApp(QMainWindow):
 
     def handle_script_error(self, error_message):
         self.script_runner.deleteLater()
-        self.fin_run = True
+        self.fin_run = 2
         self.run_button.setEnabled(True)
         self.run_button.setText("Start New Route")
         QMessageBox.critical(self, "Execution Error", error_message)
@@ -471,16 +484,17 @@ class RoutePlannerApp(QMainWindow):
             self.end_postal_entry.setText("")
             self.start_postal_entry.setText("")
             self.run_button.setText("Generate Route")
-            self.fin_run = False
+            self.fin_run = 0
 
     def run_script(self):
-        if self.fin_run:
+        if self.fin_run == 2:
             self.start_new()
             return
 
 
         self.run_button.setEnabled(False)
         self.run_button.setText("Generating Route...")
+        self.fin_run = 1
         mode = self.mode_var
         start = self.start_entry.text() if mode != 'mrt' else self.start_dropdown.currentText()
         end = self.end_entry.text() if mode != 'mrt' else self.end_dropdown.currentText()
